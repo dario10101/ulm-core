@@ -11,5 +11,16 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api/v1"
 
+    # Postgres local via Docker, ver ulm-repository/postgres-local-setup.md
+    database_url: str = "postgresql+psycopg2://ulm_user:ulm_password@localhost:5432/ulm_db"
+
+    # Origenes permitidos para CORS (frontend Vite en desarrollo)
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Usuario "quemado": todavia no hay auth, todo registro se asocia a este usuario
+    default_user_id: int = 1
+    default_user_name: str = "Ruben"
+    default_user_email: str = "ruben@example.com"
+
 
 settings = Settings()

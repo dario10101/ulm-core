@@ -1,0 +1,384 @@
+{
+  "info": {
+    "name": "ULM Core",
+    "description": "Endpoints de ULM Core: registros dummy (prueba de acceso a Postgres), registros de peso, y el modulo de checklists (categorias, template semanal, y semanas/tareas concretas).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "weight_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "template_task_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "day",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "week_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "task_id",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Dummy",
+      "item": [
+        {
+          "name": "Crear registro dummy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"registro de prueba\",\n  \"description\": \"creado desde Postman\",\n  \"value\": 42.5,\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/dummy/",
+              "host": ["{{base_url}}"],
+              "path": ["dummy", ""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar registros dummy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dummy/",
+              "host": ["{{base_url}}"],
+              "path": ["dummy", ""]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Weights",
+      "item": [
+        {
+          "name": "Crear registro de peso",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_kg\": 72.4,\n  \"recorded_on\": \"2026-09-14\",\n  \"note\": \"creado desde Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/weights/",
+              "host": ["{{base_url}}"],
+              "path": ["weights", ""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar registros de peso (paginado + rango de fechas)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weights/?start_date=2026-01-01&end_date=2026-12-31&page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["weights", ""],
+              "query": [
+                { "key": "start_date", "value": "2026-01-01" },
+                { "key": "end_date", "value": "2026-12-31" },
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar registro de peso",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_kg\": 71.8,\n  \"recorded_on\": \"2026-09-14\",\n  \"note\": \"actualizado desde Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/weights/{{weight_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["weights", "{{weight_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar registro de peso",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weights/{{weight_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["weights", "{{weight_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Checklists",
+      "item": [
+        {
+          "name": "Categorias",
+          "item": [
+            {
+              "name": "Listar categorias",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/categories",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "categories"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Guardar categorias (crea, renombra, reordena y elimina)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [\n    { \"id\": {{category_id}}, \"name\": \"Health\" },\n    { \"name\": \"Personal\" }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/categories",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "categories"]
+                },
+                "description": "El orden de la lista define la prioridad (indice + 1). Una categoria existente que no aparece en `items` se elimina (falla con 409 si todavia tiene tareas de template)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Template semanal",
+          "item": [
+            {
+              "name": "Listar tareas de template",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/template/tasks",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "template", "tasks"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Crear tarea de template",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Gym\",\n  \"importance\": \"HIGH\",\n  \"category_id\": {{category_id}},\n  \"days\": [1, 3, 5]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/template/tasks",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "template", "tasks"]
+                },
+                "description": "`importance`: HIGH (2 puntos) o STANDARD (1 punto). `days`: 1=Lunes ... 7=Domingo."
+              },
+              "response": []
+            },
+            {
+              "name": "Editar tarea de template (solo un dia)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Gym (piernas)\",\n  \"importance\": \"STANDARD\",\n  \"category_id\": {{category_id}}\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/template/tasks/{{template_task_id}}?day={{day}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "template", "tasks", "{{template_task_id}}"],
+                  "query": [{ "key": "day", "value": "{{day}}" }]
+                },
+                "description": "Si la tarea aplica a varios dias, ese dia se separa a una tarea nueva con estos valores; los demas dias conservan la tarea original sin cambios."
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar tarea de template (solo un dia)",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/template/tasks/{{template_task_id}}?day={{day}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "template", "tasks", "{{template_task_id}}"],
+                  "query": [{ "key": "day", "value": "{{day}}" }]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Semanas y tareas",
+          "item": [
+            {
+              "name": "Obtener la semana actual (abierta)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/weeks/current",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "weeks", "current"]
+                },
+                "description": "Devuelve `null` si no hay ninguna semana sin cerrar."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear semana (copia el template)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_day\": \"2026-09-19\",\n  \"last_day\": \"2026-09-25\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/weeks",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "weeks"]
+                },
+                "description": "El rango debe cubrir exactamente 7 dias. Falla con 409 si ya hay una semana sin cerrar."
+              },
+              "response": []
+            },
+            {
+              "name": "Listar tareas de una semana",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/weeks/{{week_id}}/tasks",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "weeks", "{{week_id}}", "tasks"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Cambiar estado de una tarea",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"COMPLETE\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/tasks/{{task_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "tasks", "{{task_id}}"]
+                },
+                "description": "`status`: PENDING, COMPLETE o FAILED. Falla con 409 si la semana ya esta cerrada."
+              },
+              "response": []
+            },
+            {
+              "name": "Cerrar semana",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/weeks/{{week_id}}/close",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "weeks", "{{week_id}}", "close"]
+                },
+                "description": "Calcula el puntaje (suma de puntos de las tareas COMPLETE) una unica vez y marca la semana como cerrada."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
