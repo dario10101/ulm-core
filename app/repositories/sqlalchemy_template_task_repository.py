@@ -6,6 +6,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.db.models.checklist import ChecklistCategory, ChecklistTemplateTask
+from app.schemas.checklist import CategoryStatus
 
 
 class SqlAlchemyTemplateTaskRepository:
@@ -17,7 +18,10 @@ class SqlAlchemyTemplateTaskRepository:
             self._db.execute(
                 select(ChecklistTemplateTask)
                 .join(ChecklistCategory, ChecklistTemplateTask.category_id == ChecklistCategory.id)
-                .where(ChecklistCategory.user_id == user_id)
+                .where(
+                    ChecklistCategory.user_id == user_id,
+                    ChecklistCategory.status == CategoryStatus.ENABLED.value,
+                )
                 .order_by(ChecklistTemplateTask.id)
             )
             .scalars()
@@ -34,12 +38,17 @@ class SqlAlchemyTemplateTaskRepository:
         self._db.delete(task)
 
     def category_belongs_to_user(self, category_id: int, user_id: int) -> bool:
+        # Una categoria DISABLED no puede recibir tareas de template nuevas ni
+        # editadas. Las categorias que se llegan a deshabilitar nunca tienen
+        # template tasks vivas (replace_categories lo garantiza antes de
+        # deshabilitar), asi que esto no bloquea tareas existentes.
         return bool(
             self._db.scalar(
                 select(
                     exists().where(
                         ChecklistCategory.id == category_id,
                         ChecklistCategory.user_id == user_id,
+                        ChecklistCategory.status == CategoryStatus.ENABLED.value,
                     )
                 )
             )

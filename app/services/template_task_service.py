@@ -46,6 +46,7 @@ class TemplateTaskService:
         importance: Importance,
         category_id: int,
         days: list[int],
+        detail: str | None = None,
     ) -> ChecklistTemplateTask:
         if not self._repository.category_belongs_to_user(category_id, user_id):
             raise CategoryNotFoundError(category_id)
@@ -55,6 +56,7 @@ class TemplateTaskService:
             day_of_week=serialize_days(days),
             importance=importance.value,
             category_id=category_id,
+            detail=detail,
         )
         self._repository.add(task)
         self._repository.commit()
@@ -70,6 +72,7 @@ class TemplateTaskService:
         name: str,
         importance: Importance,
         category_id: int,
+        detail: str | None = None,
     ) -> ChecklistTemplateTask:
         task = self._get_owned_task(task_id, user_id)
         days = parse_days(task.day_of_week)
@@ -84,6 +87,7 @@ class TemplateTaskService:
             task.name = name
             task.importance = importance.value
             task.category_id = category_id
+            task.detail = detail
             self._repository.commit()
             self._repository.refresh(task)
             return task
@@ -94,6 +98,7 @@ class TemplateTaskService:
             day_of_week=serialize_days([day]),
             importance=importance.value,
             category_id=category_id,
+            detail=detail,
         )
         self._repository.add(split_task)
         self._repository.commit()

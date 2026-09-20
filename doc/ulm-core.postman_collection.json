@@ -235,7 +235,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Gym\",\n  \"importance\": \"HIGH\",\n  \"category_id\": {{category_id}},\n  \"days\": [1, 3, 5]\n}"
+                  "raw": "{\n  \"name\": \"Gym\",\n  \"importance\": \"HIGH\",\n  \"category_id\": {{category_id}},\n  \"days\": [1, 3, 5],\n  \"detail\": \"3 sets of squats, 3 of deadlifts\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/checklists/template/tasks",
@@ -258,7 +258,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Gym (piernas)\",\n  \"importance\": \"STANDARD\",\n  \"category_id\": {{category_id}}\n}"
+                  "raw": "{\n  \"name\": \"Gym (piernas)\",\n  \"importance\": \"STANDARD\",\n  \"category_id\": {{category_id}},\n  \"detail\": \"Enfocado en cuadriceps\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/checklists/template/tasks/{{template_task_id}}?day={{day}}",
@@ -340,6 +340,29 @@
               "response": []
             },
             {
+              "name": "Agregar tarea circunstancial a la semana (sin tocar el template)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Llevar el auto al taller\",\n  \"importance\": \"HIGH\",\n  \"category_id\": {{category_id}},\n  \"day_of_week\": {{day}},\n  \"detail\": \"Pedir cita en el taller de siempre\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/weeks/{{week_id}}/tasks",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "weeks", "{{week_id}}", "tasks"]
+                },
+                "description": "A diferencia del template, `day_of_week` es un unico dia (1-7). Falla con 409 si la semana ya esta cerrada."
+              },
+              "response": []
+            },
+            {
               "name": "Cambiar estado de una tarea",
               "request": {
                 "method": "PATCH",
@@ -363,6 +386,43 @@
               "response": []
             },
             {
+              "name": "Editar una tarea (modo Edit)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Llevar el auto al taller (urgente)\",\n  \"importance\": \"HIGH\",\n  \"category_id\": {{category_id}},\n  \"detail\": \"Cambiaron la fecha a mañana\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/checklists/tasks/{{task_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "tasks", "{{task_id}}"]
+                },
+                "description": "No cambia el dia ni la semana, solo nombre/importancia/categoria. Falla con 409 si la semana ya esta cerrada."
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar una tarea (modo Edit, sin confirmacion)",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/checklists/tasks/{{task_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["checklists", "tasks", "{{task_id}}"]
+                },
+                "description": "Falla con 409 si la semana ya esta cerrada."
+              },
+              "response": []
+            },
+            {
               "name": "Cerrar semana",
               "request": {
                 "method": "POST",
@@ -372,7 +432,7 @@
                   "host": ["{{base_url}}"],
                   "path": ["checklists", "weeks", "{{week_id}}", "close"]
                 },
-                "description": "Calcula el puntaje (suma de puntos de las tareas COMPLETE) una unica vez y marca la semana como cerrada."
+                "description": "Falla con 409 si todavia hay tareas en PENDING. Si no, calcula el puntaje (suma de puntos de las tareas COMPLETE) una unica vez y marca la semana como cerrada."
               },
               "response": []
             }

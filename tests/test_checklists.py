@@ -3,12 +3,15 @@
 Usa SQLite en memoria (igual que test_weights.py) para no depender de Postgres.
 """
 
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base_class import Base
+from app.db.models.checklist import ChecklistWeek, ChecklistWeekCategoryDayScore
 from app.db.seed import ensure_default_user
 from app.db.session import get_db
 from app.main import app
@@ -41,6 +44,15 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 client = TestClient(app)
+
+# Las semanas se validan contra la fecha real de hoy (WeekService.get_next_range),
+# asi que los rangos de las pruebas se calculan relativos a ella en vez de
+# quedar fijos a una fecha (lo que las volveria invalidas con el paso del tiempo).
+TODAY = date.today()
+
+
+def _d(offset: int) -> str:
+    return (TODAY + timedelta(days=offset)).isoformat()
 
 
 def _reset_categories():
@@ -127,6 +139,15 @@ def test_replace_categories_rejects_unknown_id():
 
 
 # --- Template tasks ---
+
+
+def _direct_session():
+    """Sesion contra el engine que app.dependency_overrides[get_db] tiene
+    activo *ahora mismo* (no necesariamente el TestSessionLocal de este
+    archivo: pytest importa todos los tests antes de correrlos, y el ultimo
+    archivo importado es el que termina activo para toda la suite). Usar
+    TestSessionLocal directo aca escribiria en un engine que la app nunca lee."""
+    return next(app.dependency_overrides[get_db]())
 
 
 def _make_category(name: str) -> int:
@@ -304,10 +325,18 @@ def test_get_current_week_is_none_initially():
     assert response.json() is None
 
 
-def test_create_week_requires_seven_day_range():
+def test_next_range_before_any_week_uses_seven_days_back():
+    response = client.get("/api/v1/checklists/weeks/next-range")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["min_first_day"] == _d(-7)
+    assert body["min_last_day"] == _d(0)
+
+
+def test_create_week_rejects_more_than_seven_days():
     response = client.post(
         "/api/v1/checklists/weeks",
-        json={"first_day": "2026-09-19", "last_day": "2026-09-24"},
+        json={"first_day": _d(0), "last_day": _d(7)},
     )
     assert response.status_code == 422
 
@@ -335,7 +364,7 @@ def test_create_week_copies_template_tasks_split_by_day():
 
     response = client.post(
         "/api/v1/checklists/weeks",
-        json={"first_day": "2026-09-19", "last_day": "2026-09-25"},
+        json={"first_day": _d(0), "last_day": _d(6)},
     )
     assert response.status_code == 201
     week = response.json()
@@ -360,8 +389,18 @@ def test_create_week_copies_template_tasks_split_by_day():
 def test_create_week_blocked_while_one_is_open():
     response = client.post(
         "/api/v1/checklists/weeks",
-        json={"first_day": "2026-09-26", "last_day": "2026-10-02"},
+        json={"first_day": _d(7), "last_day": _d(13)},
     )
+    assert response.status_code == 409
+
+
+def test_close_week_blocked_while_tasks_are_pending():
+    current = client.get("/api/v1/checklists/weeks/current").json()
+    week_id = current["id"]
+    tasks = client.get(f"/api/v1/checklists/weeks/{week_id}/tasks").json()
+    assert any(t["status"] == "PENDING" for t in tasks)
+
+    response = client.post(f"/api/v1/checklists/weeks/{week_id}/close")
     assert response.status_code == 409
 
 
@@ -371,27 +410,24 @@ def test_update_status_and_close_week_computes_score():
     tasks = client.get(f"/api/v1/checklists/weeks/{week_id}/tasks").json()
 
     gym_day1 = next(t for t in tasks if t["name"] == "Gym" and t["day_of_week"] == 1)
-    water_day1 = next(t for t in tasks if t["name"] == "Water" and t["day_of_week"] == 1)
-    # el Gym del dia 3 se deja en PENDING a proposito
 
+    # Cerrar exige que no quede ninguna tarea PENDING: marcamos todo FAILED y
+    # despues destacamos una sola como COMPLETE, para probar que el puntaje
+    # solo suma las tareas completadas.
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
     completed = client.patch(
         f"/api/v1/checklists/tasks/{gym_day1['id']}", json={"status": "COMPLETE"}
     )
     assert completed.status_code == 200
     assert completed.json()["status"] == "COMPLETE"
 
-    failed = client.patch(
-        f"/api/v1/checklists/tasks/{water_day1['id']}", json={"status": "FAILED"}
-    )
-    assert failed.json()["status"] == "FAILED"
-
     closed = client.post(f"/api/v1/checklists/weeks/{week_id}/close")
     assert closed.status_code == 200
     closed_body = closed.json()
     assert closed_body["closed"] is True
     assert closed_body["closed_date"] is not None
-    # Solo el Gym HIGH completado suma: 2 puntos. Water (FAILED) y el Gym
-    # del dia 3 (PENDING) no aportan.
+    # Solo el Gym HIGH completado suma: 2 puntos. El resto quedo FAILED.
     assert closed_body["score"] == 2
 
     assert client.get("/api/v1/checklists/weeks/current").json() is None
@@ -408,13 +444,17 @@ def test_cannot_modify_tasks_of_a_closed_week():
     )
     week = client.post(
         "/api/v1/checklists/weeks",
-        json={"first_day": "2026-10-03", "last_day": "2026-10-09"},
+        json={"first_day": _d(14), "last_day": _d(20)},
     ).json()
-    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
 
     tasks = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
-    task_id = tasks[0]["id"]
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "COMPLETE"})
 
+    close_response = client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+    assert close_response.status_code == 200
+
+    task_id = tasks[0]["id"]
     response = client.patch(
         f"/api/v1/checklists/tasks/{task_id}", json={"status": "COMPLETE"}
     )
@@ -424,8 +464,12 @@ def test_cannot_modify_tasks_of_a_closed_week():
 def test_close_week_twice_returns_409():
     week = client.post(
         "/api/v1/checklists/weeks",
-        json={"first_day": "2026-10-10", "last_day": "2026-10-16"},
+        json={"first_day": _d(21), "last_day": _d(27)},
     ).json()
+    tasks = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "COMPLETE"})
+
     first_close = client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
     assert first_close.status_code == 200
 
@@ -443,3 +487,666 @@ def test_update_status_for_unknown_task_returns_404():
         "/api/v1/checklists/tasks/999999", json={"status": "COMPLETE"}
     )
     assert response.status_code == 404
+
+
+# --- Tareas circunstanciales (agregadas directo a la semana, sin template) ---
+
+
+def test_create_ad_hoc_task_on_current_week():
+    category_id = _make_category("Ad hoc tasks")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(28), "last_day": _d(34)},
+    ).json()
+
+    template_before = len(client.get("/api/v1/checklists/template/tasks").json())
+
+    response = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Fix a one-off issue",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "day_of_week": 3,
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "Fix a one-off issue"
+    assert body["day_of_week"] == 3
+    assert body["status"] == "PENDING"
+    assert body["points"] == 2
+
+    tasks = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    assert any(t["id"] == body["id"] for t in tasks)
+
+    # No debe crear ni modificar tareas de template
+    template_after = len(client.get("/api/v1/checklists/template/tasks").json())
+    assert template_after == template_before
+
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+def test_create_ad_hoc_task_with_invalid_category_returns_404():
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(35), "last_day": _d(41)},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": 999999, "day_of_week": 1},
+    )
+    assert response.status_code == 404
+
+    tasks = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+# --- Validaciones de rango contra la semana anterior y contra hoy ---
+
+
+def test_create_week_shorter_than_seven_days_is_allowed():
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(42), "last_day": _d(44)},
+    )
+    assert week.status_code == 201
+    body = week.json()
+
+    tasks = client.get(f"/api/v1/checklists/weeks/{body['id']}/tasks").json()
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{body['id']}/close")
+
+
+def test_next_range_reflects_the_previous_week():
+    response = client.get("/api/v1/checklists/weeks/next-range")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["min_first_day"] == _d(45)
+    assert body["min_last_day"] == _d(0)
+
+
+def test_create_week_rejects_start_before_previous_week_end():
+    response = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(44), "last_day": _d(50)},
+    )
+    assert response.status_code == 422
+
+
+def test_create_week_rejects_end_before_today():
+    response = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(-10), "last_day": _d(-5)},
+    )
+    assert response.status_code == 422
+
+
+def test_create_ad_hoc_task_on_closed_week_returns_409():
+    category_id = _make_category("Ad hoc closed guard")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(45), "last_day": _d(51)},
+    ).json()
+    tasks = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    for task in tasks:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+    response = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Too late",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "day_of_week": 1,
+        },
+    )
+    assert response.status_code == 409
+
+
+def test_create_ad_hoc_task_on_unknown_week_returns_404():
+    response = client.post(
+        "/api/v1/checklists/weeks/999999/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": 1, "day_of_week": 1},
+    )
+    assert response.status_code == 404
+
+
+# --- Editar/eliminar una tarea de semana (modo Edit del checklist) ---
+
+
+def test_update_task_changes_name_importance_and_category():
+    category_id = _make_category("Edit mode source")
+    other_category_id = _make_category("Edit mode target")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(52), "last_day": _d(58)},
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Draft name",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "day_of_week": 2,
+        },
+    ).json()
+
+    response = client.put(
+        f"/api/v1/checklists/tasks/{created['id']}",
+        json={"name": "Final name", "importance": "HIGH", "category_id": other_category_id},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == created["id"]
+    assert body["name"] == "Final name"
+    assert body["importance"] == "HIGH"
+    assert body["points"] == 2
+    assert body["category_id"] == other_category_id
+    assert body["day_of_week"] == 2  # el dia no cambia al editar
+
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+def test_update_task_with_invalid_category_returns_404():
+    category_id = _make_category("Edit invalid category")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(59), "last_day": _d(65)},
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": category_id, "day_of_week": 1},
+    ).json()
+
+    response = client.put(
+        f"/api/v1/checklists/tasks/{created['id']}",
+        json={"name": "X", "importance": "HIGH", "category_id": 999999},
+    )
+    assert response.status_code == 404
+
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+def test_update_unknown_task_returns_404():
+    response = client.put(
+        "/api/v1/checklists/tasks/999999",
+        json={"name": "X", "importance": "HIGH", "category_id": 1},
+    )
+    assert response.status_code == 404
+
+
+def test_update_task_on_closed_week_returns_409():
+    category_id = _make_category("Edit closed guard")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(66), "last_day": _d(72)},
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": category_id, "day_of_week": 1},
+    ).json()
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+    response = client.put(
+        f"/api/v1/checklists/tasks/{created['id']}",
+        json={"name": "Y", "importance": "HIGH", "category_id": category_id},
+    )
+    assert response.status_code == 409
+
+
+def test_delete_task_removes_it_without_confirmation():
+    category_id = _make_category("Delete mode")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(73), "last_day": _d(79)},
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "Delete me", "importance": "HIGH", "category_id": category_id, "day_of_week": 4},
+    ).json()
+
+    response = client.delete(f"/api/v1/checklists/tasks/{created['id']}")
+    assert response.status_code == 204
+
+    remaining = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    assert all(t["id"] != created["id"] for t in remaining)
+
+    for task in remaining:
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+def test_delete_unknown_task_returns_404():
+    response = client.delete("/api/v1/checklists/tasks/999999")
+    assert response.status_code == 404
+
+
+def test_delete_task_on_closed_week_returns_409():
+    category_id = _make_category("Delete closed guard")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(80), "last_day": _d(86)},
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": category_id, "day_of_week": 1},
+    ).json()
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+    response = client.delete(f"/api/v1/checklists/tasks/{created['id']}")
+    assert response.status_code == 409
+
+
+# --- Detalle (descripcion) de tareas ---
+
+
+def test_create_template_task_without_detail_defaults_to_none():
+    category_id = _make_category("Detail defaults")
+    response = client.post(
+        "/api/v1/checklists/template/tasks",
+        json={"name": "No detail", "importance": "HIGH", "category_id": category_id, "days": [1]},
+    )
+    assert response.json()["detail"] is None
+
+
+def test_create_and_edit_template_task_detail():
+    category_id = _make_category("Detail template")
+    created = client.post(
+        "/api/v1/checklists/template/tasks",
+        json={
+            "name": "Gym",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "days": [1],
+            "detail": "3 sets of squats, 3 of deadlifts",
+        },
+    ).json()
+    assert created["detail"] == "3 sets of squats, 3 of deadlifts"
+
+    edited = client.put(
+        f"/api/v1/checklists/template/tasks/{created['id']}",
+        params={"day": 1},
+        json={
+            "name": "Gym",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "detail": "Updated routine",
+        },
+    ).json()
+    assert edited["detail"] == "Updated routine"
+
+
+def test_editing_multi_day_template_task_keeps_original_detail_on_untouched_day():
+    category_id = _make_category("Detail split")
+    created = client.post(
+        "/api/v1/checklists/template/tasks",
+        json={
+            "name": "Stretch",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "days": [1, 2],
+            "detail": "Original detail",
+        },
+    ).json()
+
+    edited = client.put(
+        f"/api/v1/checklists/template/tasks/{created['id']}",
+        params={"day": 2},
+        json={
+            "name": "Stretch",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "detail": "New detail for day 2",
+        },
+    ).json()
+    assert edited["detail"] == "New detail for day 2"
+
+    tasks = client.get("/api/v1/checklists/template/tasks").json()
+    original = next(t for t in tasks if t["id"] == created["id"])
+    assert original["detail"] == "Original detail"
+
+
+def test_create_and_edit_week_task_detail():
+    category_id = _make_category("Detail week task")
+    week = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(87), "last_day": _d(93)},
+    ).json()
+
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Call the dentist",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "day_of_week": 1,
+            "detail": "Ask about the appointment on Friday",
+        },
+    ).json()
+    assert created["detail"] == "Ask about the appointment on Friday"
+
+    edited = client.put(
+        f"/api/v1/checklists/tasks/{created['id']}",
+        json={
+            "name": "Call the dentist",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "detail": "Rescheduled to Monday",
+        },
+    ).json()
+    assert edited["detail"] == "Rescheduled to Monday"
+
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+# --- Analytics (tendencias de semanas cerradas) ---
+#
+# Las 2 semanas reales de aca abajo usan _d(94) y _d(95) (semanas de 1 solo
+# dia, a proposito): test_cld_tasks.py reserva desde _d(100) en adelante para
+# sus propias semanas (ver su comentario sobre _BASE), asi que no hay que
+# extender esta cadena mas alla de _d(99) sin revisar ese margen.
+
+
+def test_close_week_populates_category_day_scores():
+    category_id = _make_category("Score table check")
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": _d(94), "last_day": _d(94)}
+    ).json()
+    created = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "One-off", "importance": "HIGH", "category_id": category_id, "day_of_week": 1},
+    ).json()
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        status = "COMPLETE" if task["id"] == created["id"] else "FAILED"
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": status})
+    closed = client.post(f"/api/v1/checklists/weeks/{week['id']}/close").json()
+    assert closed["score"] == 2
+
+    year = int(closed["first_day"][:4])
+    analytics = client.get("/api/v1/checklists/analytics/weekly", params={"year": year}).json()
+    point = next(w for w in analytics["weeks"] if w["week_id"] == week["id"])
+    assert point["first_day"] == week["first_day"]
+    assert point["last_day"] == week["last_day"]
+    # No afirmamos en que columna cae el puntaje: este archivo acumula
+    # categorias de tests anteriores, asi que esta puede terminar agrupada en
+    # "Others" (comportamiento correcto, ver MAX_NAMED_CATEGORIES). Lo que
+    # importa es que el puntaje calculado al cerrar llega completo a la vista.
+    assert sum(point["scores"]) == 2
+
+
+def test_disabled_category_keeps_its_history_in_analytics():
+    """Una categoria deshabilitada desaparece de /categories pero su
+    historia sigue viva en analytics. Usa un anio sintetico propio (via
+    insercion directa) para no depender de ganarle el ranking de puntaje a
+    las decenas de categorias que este archivo acumula en el anio real."""
+    category_id = _make_category("History after disable")
+    year = 2016
+
+    db = _direct_session()
+    try:
+        week = ChecklistWeek(
+            user_id=1,
+            first_day=date(year, 1, 1),
+            last_day=date(year, 1, 7),
+            closed=True,
+            closed_date=None,
+            score=7,
+        )
+        db.add(week)
+        db.flush()
+        db.add(
+            ChecklistWeekCategoryDayScore(
+                cl_week_id=week.id, category_id=category_id, day_of_week=1, score=7, points_possible=7
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # Deshabilitar (hoy es lo que hace "eliminar" una categoria desde el PUT
+    # de reemplazo): desaparece de la lista de categorias activas.
+    remaining = [c for c in client.get("/api/v1/checklists/categories").json() if c["id"] != category_id]
+    client.put(
+        "/api/v1/checklists/categories",
+        json={"items": [{"id": c["id"], "name": c["name"]} for c in remaining]},
+    )
+    listed_ids = {c["id"] for c in client.get("/api/v1/checklists/categories").json()}
+    assert category_id not in listed_ids
+
+    analytics = client.get("/api/v1/checklists/analytics/weekly", params={"year": year}).json()
+    names = {c["category_id"]: c["name"] for c in analytics["categories"]}
+    assert names.get(category_id) == "History after disable"
+    assert analytics["weeks"][0]["scores"] == [7]
+
+
+def test_disabled_category_cannot_be_assigned_to_new_work():
+    category_id = _make_category("Will be disabled")
+    remaining = [c for c in client.get("/api/v1/checklists/categories").json() if c["id"] != category_id]
+    client.put(
+        "/api/v1/checklists/categories",
+        json={"items": [{"id": c["id"], "name": c["name"]} for c in remaining]},
+    )
+
+    template_response = client.post(
+        "/api/v1/checklists/template/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": category_id, "days": [1]},
+    )
+    assert template_response.status_code == 404
+
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": _d(95), "last_day": _d(95)}
+    ).json()
+    ad_hoc_response = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={"name": "X", "importance": "HIGH", "category_id": category_id, "day_of_week": 1},
+    )
+    assert ad_hoc_response.status_code == 404
+
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+
+
+def test_monthly_analytics_splits_a_week_that_crosses_month_boundary():
+    """Semana sintetica Jan29-Feb4/2015 (fuera de rango de cualquier otro
+    test): cada dia debe caer en el mes calendario que le corresponde de
+    verdad, no todo en el mes de first_day."""
+    category_id = _make_category("Cross-month test")
+    first_day = date(2015, 1, 29)
+    daily_scores = [10, 5, 5, 5, 5, 0, 5]  # offsets 0..6 -> Jan29..Feb4
+
+    db = _direct_session()
+    try:
+        week = ChecklistWeek(
+            user_id=1,
+            first_day=first_day,
+            last_day=first_day + timedelta(days=6),
+            closed=True,
+            closed_date=None,
+            score=sum(daily_scores),
+        )
+        db.add(week)
+        db.flush()
+        for offset, score in enumerate(daily_scores):
+            actual_date = first_day + timedelta(days=offset)
+            db.add(
+                ChecklistWeekCategoryDayScore(
+                    cl_week_id=week.id,
+                    category_id=category_id,
+                    day_of_week=actual_date.isoweekday(),
+                    score=score,
+                    points_possible=score,
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    expected_jan = sum(
+        score for offset, score in enumerate(daily_scores) if (first_day + timedelta(days=offset)).month == 1
+    )
+    expected_feb = sum(
+        score for offset, score in enumerate(daily_scores) if (first_day + timedelta(days=offset)).month == 2
+    )
+    assert expected_jan + expected_feb == sum(daily_scores)
+
+    body = client.get("/api/v1/checklists/analytics/monthly", params={"year": 2015}).json()
+    index = next(i for i, c in enumerate(body["categories"]) if c["category_id"] == category_id)
+    january = next(m for m in body["months"] if m["month"] == 1)
+    february = next(m for m in body["months"] if m["month"] == 2)
+    assert january["scores"][index] == expected_jan
+    assert february["scores"][index] == expected_feb
+
+
+def test_weekly_analytics_groups_low_scoring_categories_into_others():
+    category_ids = [_make_category(f"Bucket {i}") for i in range(9)]
+    scores = [100, 90, 80, 70, 60, 50, 40, 30, 20]  # las 2 ultimas van a "Others"
+
+    db = _direct_session()
+    try:
+        week = ChecklistWeek(
+            user_id=1,
+            first_day=date(2014, 1, 1),
+            last_day=date(2014, 1, 7),
+            closed=True,
+            closed_date=None,
+            score=sum(scores),
+        )
+        db.add(week)
+        db.flush()
+        for category_id, score in zip(category_ids, scores):
+            db.add(
+                ChecklistWeekCategoryDayScore(
+                    cl_week_id=week.id,
+                    category_id=category_id,
+                    day_of_week=1,
+                    score=score,
+                    points_possible=score,
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    body = client.get("/api/v1/checklists/analytics/weekly", params={"year": 2014}).json()
+    assert len(body["categories"]) == 8
+    assert body["categories"][-1] == {"category_id": None, "name": "Others"}
+
+    week_point = body["weeks"][0]
+    assert week_point["scores"][-1] == 30 + 20
+    assert sum(week_point["scores"]) == sum(scores)
+
+
+def test_analytics_for_year_with_no_closed_weeks_is_empty():
+    body = client.get("/api/v1/checklists/analytics/weekly", params={"year": 2010}).json()
+    assert body == {"year": 2010, "categories": [], "weeks": []}
+
+
+# --- Categorias deshabilitadas: visibilidad y reactivacion ---
+
+
+def _disable_category(category_id: int) -> None:
+    remaining = [c for c in client.get("/api/v1/checklists/categories").json() if c["id"] != category_id]
+    client.put(
+        "/api/v1/checklists/categories",
+        json={"items": [{"id": c["id"], "name": c["name"]} for c in remaining]},
+    )
+
+
+def test_disabled_category_can_be_re_enabled():
+    category_id = _make_category("Re-enable me")
+    _disable_category(category_id)
+    assert category_id not in {c["id"] for c in client.get("/api/v1/checklists/categories").json()}
+
+    response = client.post(f"/api/v1/checklists/categories/{category_id}/enable")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ENABLED"
+
+    listed = client.get("/api/v1/checklists/categories").json()
+    assert category_id in {c["id"] for c in listed}
+    # Vuelve al final: prioridad mayor a la de cualquier otra categoria habilitada.
+    reenabled = next(c for c in listed if c["id"] == category_id)
+    others_max_priority = max(c["priority"] for c in listed if c["id"] != category_id)
+    assert reenabled["priority"] > others_max_priority
+
+
+def test_enable_unknown_category_returns_404():
+    response = client.post("/api/v1/checklists/categories/999999/enable")
+    assert response.status_code == 404
+
+
+def test_list_categories_include_disabled_puts_disabled_last():
+    category_id = _make_category("Will list disabled")
+    _disable_category(category_id)
+
+    listed = client.get("/api/v1/checklists/categories", params={"include_disabled": True}).json()
+    assert category_id in {c["id"] for c in listed}
+    statuses = [c["status"] for c in listed]
+    first_disabled_index = statuses.index("DISABLED")
+    assert all(s == "ENABLED" for s in statuses[:first_disabled_index])
+    assert all(s == "DISABLED" for s in statuses[first_disabled_index:])
+
+
+def test_disabled_category_tasks_are_hidden_but_dont_block_close_and_still_score():
+    category_id = _make_category("Hidden after disable")
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": _d(96), "last_day": _d(96)}
+    ).json()
+
+    complete_task = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Done before disable",
+            "importance": "HIGH",
+            "category_id": category_id,
+            "day_of_week": 1,
+        },
+    ).json()
+    pending_task = client.post(
+        f"/api/v1/checklists/weeks/{week['id']}/tasks",
+        json={
+            "name": "Left pending",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "day_of_week": 1,
+        },
+    ).json()
+
+    # Resuelve todo lo demas que haya en la semana (tareas heredadas del
+    # template acumulado por otros tests) para poder cerrarla mas adelante;
+    # pending_task se deja PENDING a proposito.
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        if task["id"] == complete_task["id"]:
+            client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "COMPLETE"})
+        elif task["id"] != pending_task["id"]:
+            client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+
+    _disable_category(category_id)
+
+    visible = client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json()
+    assert all(t["category_id"] != category_id for t in visible)
+    assert all(t["status"] != "PENDING" for t in visible)
+
+    closed = client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+    assert closed.status_code == 200
+    # Solo "Done before disable" (HIGH) suma: el pending invisible no bloquea
+    # el cierre ni suma, pero tampoco impide que el resto de la semana cierre.
+    assert closed.json()["score"] == 2

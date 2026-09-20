@@ -8,7 +8,10 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 
 - **Habitos**: endpoint dummy en memoria (pendiente de persistencia real).
 - **Peso corporal**: CRUD completo con paginacion y filtro por rango de fechas.
-- **Checklist**: modulo completo — categorias (CRUD + reordenar por prioridad), template semanal fijo por dia/categoria, y generacion/seguimiento de la semana en curso (tareas con estado pendiente/completada/no lograda, puntaje y cierre de semana).
+- **Checklist**: modulo completo — categorias (CRUD + reordenar por prioridad), template semanal fijo por dia/categoria, generacion/seguimiento de la semana en curso (tareas con estado pendiente/completada/no lograda, puntaje y cierre de semana), alta de tareas circunstanciales directo en la semana sin modificar el template, y un campo `detail` (descripcion libre opcional) tanto en tareas de template como de semana.
+- **Tareas de calendario** (`cld_tasks`): tareas puntuales o recurrentes (semanal/mensual/anual, con ancla de fecha+hora y clamp al ultimo dia del mes cuando aplica) creadas desde "Add record". Tienen una duracion (`duration_minutes`, default 60) que nunca puede cruzar la medianoche del dia de inicio (validado tanto al crear como al editar). Opcionalmente se sincronizan con el checklist semanal (semana actual al crearse, y semanas futuras al crearse cada una) sin modificar nunca el template. Se pueden consultar por dia o por rango de fechas (vistas diaria/semanal del calendario), editar, y borrar una ocurrencia puntual o la serie completa (`excluded_dates`).
+- **Eventos de calendario**: `cld_events` (festivos y eventos generales, no ligados a un usuario; por ahora los 19 festivos de Colombia 2026) y `cld_user_events` (rangos personales del usuario, ej. vacaciones/viajes; sin CRUD en el front todavia). Ambas tablas tienen un campo `code` (ej. `HOLIDAY`, `SPECIAL_DATE` en `cld_events`; `TRAVEL`, `VACATION`, `BIRTHDAY` en `cld_user_events`) que la vista anual del front usa para filtrar por tipo de evento. La vista semanal los consulta como marcadores de inicio/fin (o dia unico si `first_day == last_day`, caso de los festivos); las vistas mensual y anual consultan ademas el rango completo (sin recortar), para pintar cada dia que un evento cubre.
+- **Vista mensual**: `GET /calendar-tasks` (por rango) ahora devuelve todas las ocurrencias de una tarea recurrente dentro de un mes completo, no solo una (una tarea `WEEKLY` puede caer 4-5 veces en un mes; antes solo se soportaban rangos de hasta 7 dias).
 
 | Endpoint | Metodo | Descripcion |
 |---|---|---|
@@ -24,14 +27,26 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 | `/api/v1/checklists/categories` | GET | Lista las categorias del checklist, ordenadas por prioridad |
 | `/api/v1/checklists/categories` | PUT | Guardado en bloque: crea, renombra, reordena y elimina categorias en una sola operacion |
 | `/api/v1/checklists/template/tasks` | GET | Lista las tareas del template semanal (con los dias a los que aplica cada una) |
-| `/api/v1/checklists/template/tasks` | POST | Crea una tarea de template, pudiendo aplicarla a varios dias a la vez |
+| `/api/v1/checklists/template/tasks` | POST | Crea una tarea de template, pudiendo aplicarla a varios dias a la vez (incluye `detail` opcional) |
 | `/api/v1/checklists/template/tasks/{id}` | PUT | Edita una tarea de template para un dia puntual (`day`), sin afectar los demas dias en los que aplica |
 | `/api/v1/checklists/template/tasks/{id}` | DELETE | Elimina una tarea de template para un dia puntual (`day`) |
 | `/api/v1/checklists/weeks/current` | GET | Devuelve la semana abierta actual (o `null` si no hay ninguna) |
-| `/api/v1/checklists/weeks` | POST | Crea una semana (rango de 7 dias) y copia las tareas del template a partir de ella |
-| `/api/v1/checklists/weeks/{id}/close` | POST | Cierra la semana y calcula su puntaje final |
+| `/api/v1/checklists/weeks/next-range` | GET | Limites minimos para la proxima semana: `min_first_day` (dia siguiente al cierre de la ultima semana, o hasta 7 dias atras de hoy si es la primera) y `min_last_day` (hoy) |
+| `/api/v1/checklists/weeks` | POST | Crea una semana (1 a 7 dias, sin solaparse con la anterior ni terminar en el pasado) y copia las tareas del template y de `cld_tasks` (`add_to_checklist=true`) que apliquen |
+| `/api/v1/checklists/weeks/{id}/close` | POST | Cierra la semana y calcula su puntaje final (falla con 409 si quedan tareas en `PENDING`) |
 | `/api/v1/checklists/weeks/{id}/tasks` | GET | Lista las tareas concretas de una semana |
+| `/api/v1/checklists/weeks/{id}/tasks` | POST | Agrega una tarea circunstancial directo a la semana (sin pasar por el template) |
 | `/api/v1/checklists/tasks/{id}` | PATCH | Cambia el estado de una tarea de la semana (`PENDING`, `COMPLETE`, `FAILED`) |
+| `/api/v1/checklists/tasks/{id}` | PUT | Edita nombre/importancia/categoria/detalle de una tarea de semana (no cambia dia ni semana) |
+| `/api/v1/checklists/tasks/{id}` | DELETE | Elimina una tarea de semana, sin confirmacion |
+| `/api/v1/calendar-tasks` | POST | Crea una tarea de calendario (puntual o recurrente); si `add_to_checklist` es `true`, la agrega de una a la semana actual cuando la fecha cae en su rango |
+| `/api/v1/calendar-tasks?date=` | GET | Ocurrencias concretas de todas las tareas de calendario para un dia puntual (vista diaria) |
+| `/api/v1/calendar-tasks?first_day=&last_day=` | GET | Igual que el anterior, pero para un rango de fechas (vista semanal) |
+| `/api/v1/calendar-tasks/{id}` | PUT | Edita una tarea de calendario (nombre, categoria, importancia, notify, detalle, fecha/hora); no permite tocar `repeat_mode` ni `add_to_checklist` |
+| `/api/v1/calendar-tasks/{id}?occurrence_date=` | DELETE | Elimina la tarea; si se pasa `occurrence_date` y la tarea repite, borra solo esa ocurrencia (queda en `excluded_dates`) en vez de toda la serie |
+| `/api/v1/calendar-tasks/{id}/checklist?occurrence_date=` | POST | Marca `add_to_checklist=true` y agrega esa ocurrencia a la semana actual si la cubre (si no, queda pendiente para la proxima semana que la cubra) |
+| `/api/v1/calendar-events?first_day=&last_day=` | GET | Marcadores de festivos/eventos generales (`cld_events`) y personales (`cld_user_events`) que se solapan con el rango: inicio, fin, o dia unico si `first_day == last_day` |
+| `/api/v1/calendar-events/ranges?first_day=&last_day=` | GET | Igual que el anterior, pero sin recortar a inicio/fin: devuelve el rango completo (`first_day`/`last_day` originales) de cada evento que se solapa, para pintar cada dia que cubre (vista mensual) |
 
 Coleccion de Postman lista para importar: [doc/ulm-core.postman_collection.json](./doc/ulm-core.postman_collection.json).
 
@@ -76,7 +91,7 @@ doc/            # Coleccion de Postman
    ```
    uvicorn app.main:app --reload
    ```
-   Las tablas se crean automaticamente al iniciar (`Base.metadata.create_all`); si Postgres no esta corriendo, la app arranca igual pero los endpoints de `dummy` fallaran.
+   Las tablas se crean automaticamente al iniciar (`Base.metadata.create_all`); si Postgres no esta corriendo, la app arranca igual pero los endpoints de `dummy` fallaran. **Ojo**: `create_all` solo crea tablas que no existen, no agrega columnas nuevas a una tabla ya creada (no hay Alembic en este proyecto). Si se agrega un campo a un modelo existente, hay que correr el `ALTER TABLE` a mano contra la base local.
 5. Abrir la documentacion interactiva en `http://127.0.0.1:8000/docs`
 
 ## Correr pruebas
