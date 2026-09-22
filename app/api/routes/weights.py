@@ -6,8 +6,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_weight_service
-from app.core.config import settings
+from app.api.deps import get_current_user_id, get_weight_service
 from app.schemas.weight import WeightCreate, WeightPage, WeightRead, WeightUpdate
 from app.services.weight_service import WeightNotFoundError, WeightService
 
@@ -16,10 +15,10 @@ router = APIRouter(prefix="/weights", tags=["weights"])
 
 @router.post("/", response_model=WeightRead, status_code=201)
 def create_weight(
-    payload: WeightCreate, service: WeightService = Depends(get_weight_service)
+    payload: WeightCreate, user_id: int = Depends(get_current_user_id), service: WeightService = Depends(get_weight_service)
 ) -> WeightRead:
     record = service.create_weight(
-        user_id=settings.default_user_id,
+        user_id=user_id,
         weight_kg=Decimal(str(payload.weight_kg)),
         recorded_on=payload.recorded_on,
         note=payload.note,
@@ -33,10 +32,11 @@ def list_weights(
     end_date: date | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
+    user_id: int = Depends(get_current_user_id),
     service: WeightService = Depends(get_weight_service),
 ) -> WeightPage:
     items, total, total_pages = service.list_weights(
-        user_id=settings.default_user_id,
+        user_id=user_id,
         start_date=start_date,
         end_date=end_date,
         page=page,

@@ -40,7 +40,7 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 | `/api/v1/checklists/tasks/{id}` | PUT | Edita nombre/importancia/categoria/detalle de una tarea de semana (no cambia dia ni semana) |
 | `/api/v1/checklists/tasks/{id}` | DELETE | Elimina una tarea de semana, sin confirmacion |
 | `/api/v1/calendar-tasks` | POST | Crea una tarea de calendario (puntual o recurrente); si `add_to_checklist` es `true`, la agrega de una a la semana actual cuando la fecha cae en su rango |
-| `/api/v1/calendar-tasks?date=` | GET | Ocurrencias concretas de todas las tareas de calendario para un dia puntual (vista diaria) |
+| `/api/v1/calendar-tasks?date=` | GET | Ocurrencias concretas de todas las tareas de calendario para un dia puntual (dia local del usuario, vista diaria) |
 | `/api/v1/calendar-tasks?first_day=&last_day=` | GET | Igual que el anterior, pero para un rango de fechas (vista semanal) |
 | `/api/v1/calendar-tasks/{id}` | PUT | Edita una tarea de calendario (nombre, categoria, importancia, notify, detalle, fecha/hora); no permite tocar `repeat_mode` ni `add_to_checklist` |
 | `/api/v1/calendar-tasks/{id}?occurrence_date=` | DELETE | Elimina la tarea; si se pasa `occurrence_date` y la tarea repite, borra solo esa ocurrencia (queda en `excluded_dates`) en vez de toda la serie |
@@ -49,6 +49,24 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 | `/api/v1/calendar-events/ranges?first_day=&last_day=` | GET | Igual que el anterior, pero sin recortar a inicio/fin: devuelve el rango completo (`first_day`/`last_day` originales) de cada evento que se solapa, para pintar cada dia que cubre (vista mensual) |
 
 Coleccion de Postman lista para importar: [doc/ulm-core.postman_collection.json](./doc/ulm-core.postman_collection.json).
+
+## Zona horaria
+
+La base guarda **siempre UTC** (`timestamptz`); la zona de cada usuario vive en `users.timezone` como nombre IANA (ej. `America/Bogota`, no un offset `-5`: en zonas con horario de verano el offset correcto depende de la fecha).
+
+Contrato de la API para tareas de calendario:
+
+| Campo | Formato | Ejemplo |
+|---|---|---|
+| `scheduled_date` / `repeat_date` (entrada y salida) | hora de pared del usuario, **sin** zona | `2026-09-15T19:30:00` |
+| `occurrence_at` (salida) | instante exacto, UTC | `2026-09-16T00:30:00Z` |
+| `occurrence_local` (salida) | la misma ocurrencia en hora de pared | `2026-09-15T19:30:00` |
+
+Una fecha de entrada con offset (`...Z` o `+02:00`) se rechaza con **422**: significaria que el cliente ya convirtio por su cuenta, probablemente con la zona del navegador, que no tiene por que ser la del usuario.
+
+Todo calculo de calendario (que dia es, que dia de la semana, que dia del mes) se hace convirtiendo primero a la zona del usuario. Calcularlo sobre el instante UTC corre las tareas de la noche al dia siguiente. Ver `app/services/cld_task_sync.py`.
+
+> Nota de despliegue: `zoneinfo` necesita la base de datos IANA del sistema, que Windows y las imagenes Docker `slim` no traen. Por eso `tzdata` esta en `requirements.txt`.
 
 ## Stack tecnico
 

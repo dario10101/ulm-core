@@ -3,6 +3,7 @@ nunca del repository directamente."""
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.db.models.checklist import ChecklistTask, ChecklistWeek, ChecklistWeekCategoryDayScore
 from app.repositories.category_repository import CategoryRepository
@@ -89,7 +90,9 @@ class WeekService:
         )
         return min_first_day, today
 
-    def create_week(self, user_id: int, first_day: date, last_day: date) -> ChecklistWeek:
+    def create_week(
+        self, user_id: int, first_day: date, last_day: date, tz: ZoneInfo
+    ) -> ChecklistWeek:
         if not (0 <= (last_day - first_day).days <= MAX_WEEK_DAYS - 1):
             raise InvalidWeekRangeError()
         if self._week_repository.get_current_open(user_id) is not None:
@@ -126,7 +129,7 @@ class WeekService:
         # Tareas de calendario (cld_tasks) con add_to_checklist=True: se
         # re-evaluan en cada semana nueva, sin tocar el template tampoco aca.
         for cld_task in self._cld_task_repository.list_sync_enabled(user_id):
-            checklist_task = build_checklist_task_for_week(cld_task, week)
+            checklist_task = build_checklist_task_for_week(cld_task, week, tz)
             if checklist_task is not None:
                 self._task_repository.add(checklist_task)
 

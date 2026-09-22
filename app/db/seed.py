@@ -16,6 +16,7 @@ def ensure_default_user(db: Session) -> User:
         id=settings.default_user_id,
         name=settings.default_user_name,
         email=settings.default_user_email,
+        timezone=settings.default_user_timezone,
     )
     db.add(user)
     db.commit()

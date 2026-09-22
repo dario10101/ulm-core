@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     default_user_id: int = 1
     default_user_name: str = "Ruben"
     default_user_email: str = "ruben@example.com"
+    # Zona horaria IANA del usuario quemado. Se guarda el nombre de la zona
+    # (no un offset fijo como -5): el offset correcto depende de la fecha en
+    # zonas con horario de verano, y una zona IANA lo resuelve por fecha.
+    default_user_timezone: str = "America/Bogota"
 
 
 settings = Settings()

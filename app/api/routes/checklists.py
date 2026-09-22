@@ -2,16 +2,19 @@
 concretas. Solo hablan con la capa de Service (nunca con el repository ni con
 la sesion de base de datos directamente)."""
 
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import (
     get_category_service,
     get_checklist_analytics_service,
     get_checklist_task_service,
+    get_current_timezone,
+    get_current_user_id,
     get_template_task_service,
     get_week_service,
 )
-from app.core.config import settings
 from app.db.models.checklist import ChecklistTask, ChecklistTemplateTask
 from app.schemas.checklist import (
     POINTS_BY_IMPORTANCE,
@@ -98,18 +101,19 @@ def _checklist_task_to_read(task: ChecklistTask) -> TaskRead:
 @router.get("/categories", response_model=list[CategoryRead])
 def list_categories(
     include_disabled: bool = False,
+    user_id: int = Depends(get_current_user_id),
     service: CategoryService = Depends(get_category_service),
 ) -> list[CategoryRead]:
-    categories = service.list_categories(settings.default_user_id, include_disabled=include_disabled)
+    categories = service.list_categories(user_id, include_disabled=include_disabled)
     return [CategoryRead.model_validate(category, from_attributes=True) for category in categories]
 
 
 @router.put("/categories", response_model=list[CategoryRead])
 def replace_categories(
-    payload: CategoriesReplace, service: CategoryService = Depends(get_category_service)
+    payload: CategoriesReplace, user_id: int = Depends(get_current_user_id), service: CategoryService = Depends(get_category_service)
 ) -> list[CategoryRead]:
     try:
-        categories = service.replace_categories(settings.default_user_id, payload.items)
+        categories = service.replace_categories(user_id, payload.items)
     except UnknownCategoryIdsError as exc:
         raise HTTPException(
             status_code=404,
@@ -125,10 +129,10 @@ def replace_categories(
 
 @router.post("/categories/{category_id}/enable", response_model=CategoryRead)
 def enable_category(
-    category_id: int, service: CategoryService = Depends(get_category_service)
+    category_id: int, user_id: int = Depends(get_current_user_id), service: CategoryService = Depends(get_category_service)
 ) -> CategoryRead:
     try:
-        category = service.enable_category(settings.default_user_id, category_id)
+        category = service.enable_category(user_id, category_id)
     except UnknownCategoryIdsError as exc:
         raise HTTPException(
             status_code=404,
@@ -139,19 +143,20 @@ def enable_category(
 
 @router.get("/template/tasks", response_model=list[TemplateTaskRead])
 def list_template_tasks(
+    user_id: int = Depends(get_current_user_id),
     service: TemplateTaskService = Depends(get_template_task_service),
 ) -> list[TemplateTaskRead]:
-    tasks = service.list_tasks(settings.default_user_id)
+    tasks = service.list_tasks(user_id)
     return [_template_task_to_read(task) for task in tasks]
 
 
 @router.post("/template/tasks", response_model=TemplateTaskRead, status_code=201)
 def create_template_task(
-    payload: TemplateTaskCreate, service: TemplateTaskService = Depends(get_template_task_service)
+    payload: TemplateTaskCreate, user_id: int = Depends(get_current_user_id), service: TemplateTaskService = Depends(get_template_task_service)
 ) -> TemplateTaskRead:
     try:
         task = service.create_task(
-            user_id=settings.default_user_id,
+            user_id=user_id,
             name=payload.name,
             importance=payload.importance,
             category_id=payload.category_id,
@@ -168,13 +173,14 @@ def update_template_task(
     task_id: int,
     payload: TemplateTaskUpdate,
     day: int = Query(ge=1, le=7, description="Dia (1-7) que se esta editando"),
+    user_id: int = Depends(get_current_user_id),
     service: TemplateTaskService = Depends(get_template_task_service),
 ) -> TemplateTaskRead:
     try:
         task = service.update_task_for_day(
             task_id,
             day,
-            user_id=settings.default_user_id,
+            user_id=user_id,
             name=payload.name,
             importance=payload.importance,
             category_id=payload.category_id,
@@ -191,10 +197,11 @@ def update_template_task(
 def delete_template_task(
     task_id: int,
     day: int = Query(ge=1, le=7, description="Dia (1-7) que se esta eliminando"),
+    user_id: int = Depends(get_current_user_id),
     service: TemplateTaskService = Depends(get_template_task_service),
 ) -> None:
     try:
-        service.delete_task_for_day(task_id, day, user_id=settings.default_user_id)
+        service.delete_task_for_day(task_id, day, user_id=user_id)
     except TemplateTaskNotFoundError:
         raise HTTPException(status_code=404, detail="Tarea no encontrada para ese dia")
 
@@ -203,23 +210,28 @@ def delete_template_task(
 
 
 @router.get("/weeks/current", response_model=WeekRead | None)
-def get_current_week(service: WeekService = Depends(get_week_service)) -> WeekRead | None:
-    week = service.get_current_week(settings.default_user_id)
+def get_current_week(user_id: int = Depends(get_current_user_id), service: WeekService = Depends(get_week_service)) -> WeekRead | None:
+    week = service.get_current_week(user_id)
     if week is None:
         return None
     return WeekRead.model_validate(week, from_attributes=True)
 
 
 @router.get("/weeks/next-range", response_model=WeekRangeRead)
-def get_next_week_range(service: WeekService = Depends(get_week_service)) -> WeekRangeRead:
-    min_first_day, min_last_day = service.get_next_range(settings.default_user_id)
+def get_next_week_range(user_id: int = Depends(get_current_user_id), service: WeekService = Depends(get_week_service)) -> WeekRangeRead:
+    min_first_day, min_last_day = service.get_next_range(user_id)
     return WeekRangeRead(min_first_day=min_first_day, min_last_day=min_last_day)
 
 
 @router.post("/weeks", response_model=WeekRead, status_code=201)
-def create_week(payload: WeekCreate, service: WeekService = Depends(get_week_service)) -> WeekRead:
+def create_week(
+    payload: WeekCreate,
+    user_id: int = Depends(get_current_user_id),
+    tz: ZoneInfo = Depends(get_current_timezone),
+    service: WeekService = Depends(get_week_service),
+) -> WeekRead:
     try:
-        week = service.create_week(settings.default_user_id, payload.first_day, payload.last_day)
+        week = service.create_week(user_id, payload.first_day, payload.last_day, tz)
     except InvalidWeekRangeError:
         raise HTTPException(status_code=422, detail="El rango debe cubrir entre 1 y 7 dias")
     except WeekAlreadyOpenError:
@@ -235,9 +247,9 @@ def create_week(payload: WeekCreate, service: WeekService = Depends(get_week_ser
 
 
 @router.post("/weeks/{week_id}/close", response_model=WeekRead)
-def close_week(week_id: int, service: WeekService = Depends(get_week_service)) -> WeekRead:
+def close_week(week_id: int, user_id: int = Depends(get_current_user_id), service: WeekService = Depends(get_week_service)) -> WeekRead:
     try:
-        week = service.close_week(settings.default_user_id, week_id)
+        week = service.close_week(user_id, week_id)
     except WeekNotFoundError:
         raise HTTPException(status_code=404, detail="Semana no encontrada")
     except WeekAlreadyClosedError:
@@ -252,10 +264,10 @@ def close_week(week_id: int, service: WeekService = Depends(get_week_service)) -
 
 @router.get("/weeks/{week_id}/tasks", response_model=list[TaskRead])
 def list_week_tasks(
-    week_id: int, service: ChecklistTaskService = Depends(get_checklist_task_service)
+    week_id: int, user_id: int = Depends(get_current_user_id), service: ChecklistTaskService = Depends(get_checklist_task_service)
 ) -> list[TaskRead]:
     try:
-        tasks = service.list_tasks_for_week(settings.default_user_id, week_id)
+        tasks = service.list_tasks_for_week(user_id, week_id)
     except WeekNotFoundError:
         raise HTTPException(status_code=404, detail="Semana no encontrada")
     return [_checklist_task_to_read(task) for task in tasks]
@@ -265,13 +277,14 @@ def list_week_tasks(
 def create_week_task(
     week_id: int,
     payload: TaskCreate,
+    user_id: int = Depends(get_current_user_id),
     service: ChecklistTaskService = Depends(get_checklist_task_service),
 ) -> TaskRead:
     """Tarea circunstancial agregada directamente a la semana en curso, sin
     pasar por (ni modificar) el template."""
     try:
         task = service.create_task(
-            settings.default_user_id,
+            user_id,
             week_id,
             name=payload.name,
             importance=payload.importance,
@@ -294,10 +307,11 @@ def create_week_task(
 def update_task_status(
     task_id: int,
     payload: TaskStatusUpdate,
+    user_id: int = Depends(get_current_user_id),
     service: ChecklistTaskService = Depends(get_checklist_task_service),
 ) -> TaskRead:
     try:
-        task = service.update_status(settings.default_user_id, task_id, payload.status)
+        task = service.update_status(user_id, task_id, payload.status)
     except ChecklistTaskNotFoundError:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     except WeekClosedError:
@@ -311,13 +325,14 @@ def update_task_status(
 def update_task(
     task_id: int,
     payload: TaskUpdate,
+    user_id: int = Depends(get_current_user_id),
     service: ChecklistTaskService = Depends(get_checklist_task_service),
 ) -> TaskRead:
     """Edicion (modo Edit del checklist): mismo dia y semana, cambia nombre,
     importancia y/o categoria."""
     try:
         task = service.update_task(
-            settings.default_user_id,
+            user_id,
             task_id,
             name=payload.name,
             importance=payload.importance,
@@ -337,10 +352,10 @@ def update_task(
 
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(
-    task_id: int, service: ChecklistTaskService = Depends(get_checklist_task_service)
+    task_id: int, user_id: int = Depends(get_current_user_id), service: ChecklistTaskService = Depends(get_checklist_task_service)
 ) -> None:
     try:
-        service.delete_task(settings.default_user_id, task_id)
+        service.delete_task(user_id, task_id)
     except ChecklistTaskNotFoundError:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     except WeekClosedError:
@@ -355,9 +370,10 @@ def delete_task(
 @router.get("/analytics/weekly", response_model=WeeklyAnalyticsRead)
 def get_weekly_analytics(
     year: int = Query(ge=2000, le=2100),
+    user_id: int = Depends(get_current_user_id),
     service: ChecklistAnalyticsService = Depends(get_checklist_analytics_service),
 ) -> WeeklyAnalyticsRead:
-    categories, weeks = service.get_weekly(settings.default_user_id, year)
+    categories, weeks = service.get_weekly(user_id, year)
     return WeeklyAnalyticsRead(
         year=year,
         categories=[AnalyticsCategory(category_id=cid, name=name) for cid, name in categories],
@@ -368,9 +384,10 @@ def get_weekly_analytics(
 @router.get("/analytics/monthly", response_model=MonthlyAnalyticsRead)
 def get_monthly_analytics(
     year: int = Query(ge=2000, le=2100),
+    user_id: int = Depends(get_current_user_id),
     service: ChecklistAnalyticsService = Depends(get_checklist_analytics_service),
 ) -> MonthlyAnalyticsRead:
-    categories, months = service.get_monthly(settings.default_user_id, year)
+    categories, months = service.get_monthly(user_id, year)
     return MonthlyAnalyticsRead(
         year=year,
         categories=[AnalyticsCategory(category_id=cid, name=name) for cid, name in categories],

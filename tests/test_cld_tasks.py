@@ -6,6 +6,7 @@ Usa SQLite en memoria (igual que test_checklists.py) para no depender de Postgre
 """
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -16,7 +17,12 @@ from app.db.base_class import Base
 from app.db.seed import ensure_default_user
 from app.db.session import get_db
 from app.main import app
-from app.services.cld_task_sync import compute_occurrence_in_range, compute_occurrences_in_range
+from app.services.cld_task_sync import (
+    compute_occurrence_in_range,
+    compute_occurrences_in_range,
+    to_local,
+    to_utc,
+)
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
 from app.db.models import checklist as checklist_model  # noqa: F401
@@ -62,8 +68,17 @@ def _d(offset: int) -> str:
     return (_BASE + timedelta(days=offset)).isoformat()
 
 
+def _next_weekday_iso(iso_weekday: int, *, from_offset: int = 800) -> str:
+    """Primera fecha con ese dia de semana ISO (1=Lunes..7=Domingo) a partir
+    de _BASE + from_offset. Lejos de hoy, para no chocar con otros tests."""
+    start = _BASE + timedelta(days=from_offset)
+    return (start + timedelta(days=(iso_weekday - start.isoweekday()) % 7)).isoformat()
+
+
 def _dt(offset: int, hour: int, minute: int) -> str:
-    return f"{_d(offset)}T{hour:02d}:{minute:02d}:00Z"
+    """Hora de pared del usuario, sin offset: es lo que espera la API (el
+    backend le adjunta la zona del usuario y convierte a UTC para guardar)."""
+    return f"{_d(offset)}T{hour:02d}:{minute:02d}:00"
 
 
 def _make_category(name: str) -> int:
@@ -309,7 +324,7 @@ def test_create_task_with_invalid_category_returns_404():
             "name": "X",
             "importance": "HIGH",
             "category_id": 999999,
-            "scheduled_date": "2026-11-05T07:30:00Z",
+            "scheduled_date": "2026-11-05T07:30:00",
         },
     )
     assert response.status_code == 404
@@ -323,7 +338,7 @@ def test_create_one_off_task_without_checklist_sync():
             "name": "Dentist",
             "importance": "STANDARD",
             "category_id": category_id,
-            "scheduled_date": "2026-11-05T07:30:00Z",
+            "scheduled_date": "2026-11-05T07:30:00",
         },
     )
     assert response.status_code == 201
@@ -474,11 +489,15 @@ def test_list_for_day_includes_one_off_and_repeating_tasks():
     names = {item["name"] for item in body}
     assert {"One-off event", "Weekly event"} <= names
 
+    # occurrence_local es la hora de pared del usuario (lo que pinta el front);
+    # occurrence_at es el mismo momento en UTC (America/Bogota = UTC-5).
     one_off = next(item for item in body if item["name"] == "One-off event")
-    assert one_off["occurrence_at"].startswith(f"{one_off_day}T09:00")
+    assert one_off["occurrence_local"].startswith(f"{one_off_day}T09:00")
+    assert one_off["occurrence_at"].startswith(f"{one_off_day}T14:00")
 
     weekly = next(item for item in body if item["name"] == "Weekly event")
-    assert weekly["occurrence_at"].startswith(f"{one_off_day}T14:15")
+    assert weekly["occurrence_local"].startswith(f"{one_off_day}T14:15")
+    assert weekly["occurrence_at"].startswith(f"{one_off_day}T19:15")
 
     other_day_body = client.get(f"/api/v1/calendar-tasks?date={_d(201)}").json()
     assert all(item["name"] not in ("One-off event", "Weekly event") for item in other_day_body)
@@ -807,3 +826,117 @@ def test_disabled_category_hides_its_calendar_tasks():
 
     after = client.get(f"/api/v1/calendar-tasks?date={day}").json()
     assert all(item["name"] != "Should disappear" for item in after)
+
+
+# --- Zona horaria: el dia del calendario se calcula en la zona del usuario,
+# no sobre el instante UTC. Sin la conversion, una tarea de la noche se corre
+# al dia siguiente (America/Bogota = UTC-5). ---
+
+BOGOTA = ZoneInfo("America/Bogota")
+MADRID = ZoneInfo("Europe/Madrid")
+
+
+def test_late_evening_task_stays_on_the_same_local_day():
+    """23:00 local es 04:00 UTC del dia siguiente: el dia que ve el usuario
+    debe seguir siendo el suyo."""
+    category_id = _make_category("TZ noche")
+    day = _d(700)
+    response = client.post(
+        "/api/v1/calendar-tasks",
+        json={
+            "name": "Late night",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "scheduled_date": f"{day}T23:00:00",
+        },
+    )
+    assert response.status_code == 201
+
+    body = client.get(f"/api/v1/calendar-tasks?date={day}").json()
+    task = next(item for item in body if item["name"] == "Late night")
+    assert task["occurrence_local"].startswith(f"{day}T23:00")
+    # El instante guardado si cae al dia siguiente en UTC: eso es correcto.
+    assert task["occurrence_at"].startswith(f"{_d(701)}T04:00")
+
+    # Y no aparece en el dia siguiente, que es donde caia antes del arreglo.
+    next_day = client.get(f"/api/v1/calendar-tasks?date={_d(701)}").json()
+    assert all(item["name"] != "Late night" for item in next_day)
+
+
+def test_early_morning_task_stays_on_the_same_local_day():
+    """00:30 local es 05:30 UTC del mismo dia: el dia no se corre hacia atras."""
+    category_id = _make_category("TZ madrugada")
+    day = _d(702)
+    client.post(
+        "/api/v1/calendar-tasks",
+        json={
+            "name": "Early bird",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "scheduled_date": f"{day}T00:30:00",
+        },
+    )
+    body = client.get(f"/api/v1/calendar-tasks?date={day}").json()
+    task = next(item for item in body if item["name"] == "Early bird")
+    assert task["occurrence_local"].startswith(f"{day}T00:30")
+
+
+def test_weekly_repeat_uses_the_local_weekday():
+    """Ancla domingo 22:00 local = lunes 03:00 UTC. La serie debe repetir en
+    domingo (dia 7), no en lunes."""
+    category_id = _make_category("TZ semanal")
+    sunday = _next_weekday_iso(7)
+    client.post(
+        "/api/v1/calendar-tasks",
+        json={
+            "name": "Sunday night ritual",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "repeat_mode": "WEEKLY",
+            "repeat_date": f"{sunday}T22:00:00",
+        },
+    )
+    body = client.get(f"/api/v1/calendar-tasks?date={sunday}").json()
+    assert any(item["name"] == "Sunday night ritual" for item in body)
+
+    following_monday = (date.fromisoformat(sunday) + timedelta(days=1)).isoformat()
+    monday_body = client.get(f"/api/v1/calendar-tasks?date={following_monday}").json()
+    assert all(item["name"] != "Sunday night ritual" for item in monday_body)
+
+
+def test_monthly_repeat_uses_the_local_day_of_month():
+    """Ancla dia 15 a las 23:30 local = dia 16 en UTC: la serie mensual debe
+    caer el 15."""
+    anchor = to_utc(datetime(2027, 3, 15, 23, 30), BOGOTA)
+    local_anchor = to_local(anchor, BOGOTA)
+    assert local_anchor.day == 15
+    assert anchor.day == 16  # el instante UTC si cae el 16
+
+    occurrences = compute_occurrences_in_range(
+        "MONTHLY", local_anchor, date(2027, 4, 1), date(2027, 4, 30)
+    )
+    assert occurrences == [date(2027, 4, 15)]
+
+
+def test_same_instant_falls_on_different_local_days_per_timezone():
+    """La prueba de que la zona se usa de verdad y no quedo un default
+    escondido: el mismo instante UTC cae en dias distintos segun la zona."""
+    instant = datetime(2027, 5, 11, 2, 30, tzinfo=timezone.utc)
+    assert to_local(instant, BOGOTA).date() == date(2027, 5, 10)  # 21:30 del 10
+    assert to_local(instant, MADRID).date() == date(2027, 5, 11)  # 04:30 del 11
+
+
+def test_api_rejects_dates_with_timezone_offset():
+    """La API recibe hora de pared; un datetime con offset significa que el
+    cliente ya convirtio por su cuenta y se rechaza."""
+    category_id = _make_category("TZ rechazo")
+    response = client.post(
+        "/api/v1/calendar-tasks",
+        json={
+            "name": "Con offset",
+            "importance": "STANDARD",
+            "category_id": category_id,
+            "scheduled_date": "2027-06-01T09:00:00Z",
+        },
+    )
+    assert response.status_code == 422

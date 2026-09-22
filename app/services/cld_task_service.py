@@ -1,9 +1,15 @@
 """Logica de negocio de tareas de calendario (cld_tasks): tareas puntuales o
 recurrentes, con sincronizacion opcional hacia el checklist semanal (sin
 tocar nunca el template). Las rutas dependen de esto, nunca del repository
-directamente."""
+directamente.
+
+Zona horaria: las fechas entran y salen de este service en hora de pared del
+usuario (naive); la conversion a/desde UTC (que es lo que guarda la BD) pasa
+aca adentro, usando la zona que llega por parametro. Ver cld_task_sync.
+"""
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.db.models.cld_task import CldTask
 from app.repositories.category_repository import CategoryRepository
@@ -13,11 +19,13 @@ from app.repositories.week_repository import WeekRepository
 from app.schemas.checklist import CategoryStatus, Importance
 from app.schemas.cld_task import RepeatMode
 from app.services.cld_task_sync import (
+    Occurrence,
     build_checklist_task,
     build_checklist_task_for_week,
     occurrences_in_range,
     parse_excluded_dates,
     serialize_excluded_dates,
+    to_utc,
 )
 
 
@@ -55,6 +63,7 @@ class CldTaskService:
     def create_task(
         self,
         user_id: int,
+        tz: ZoneInfo,
         *,
         name: str,
         importance: Importance,
@@ -67,6 +76,8 @@ class CldTaskService:
         add_to_checklist: bool,
         detail: str | None = None,
     ) -> CldTask:
+        """`scheduled_date`/`repeat_date` llegan en hora de pared del usuario
+        (el schema rechaza un datetime con tzinfo) y se guardan en UTC."""
         category = self._category_repository.get(category_id)
         if (
             category is None
@@ -81,9 +92,9 @@ class CldTaskService:
             name=name,
             importance=importance.value,
             notify=notify,
-            scheduled_date=scheduled_date,
+            scheduled_date=to_utc(scheduled_date, tz) if scheduled_date else None,
             repeat_mode=repeat_mode.value if repeat_mode else None,
-            repeat_date=repeat_date,
+            repeat_date=to_utc(repeat_date, tz) if repeat_date else None,
             duration_minutes=duration_minutes,
             add_to_checklist=add_to_checklist,
             detail=detail,
@@ -93,32 +104,33 @@ class CldTaskService:
         self._cld_task_repository.refresh(task)
 
         if add_to_checklist:
-            self._sync_to_current_week(user_id, task)
+            self._sync_to_current_week(user_id, task, tz)
 
         return task
 
     def list_for_range(
-        self, user_id: int, first_day: date, last_day: date
-    ) -> list[tuple[CldTask, datetime]]:
-        """Ocurrencias (tarea, fecha+hora concreta) de todas las tareas del
-        usuario que caen en [first_day, last_day], ya descontando las
-        excluidas. first_day == last_day cubre el caso de un solo dia (vista
-        diaria); un rango de 7 dias cubre la vista semanal; un rango de un
-        mes completo cubre la vista mensual (una tarea recurrente puede
-        aparecer varias veces en ese caso)."""
-        occurrences: list[tuple[CldTask, datetime]] = []
+        self, user_id: int, first_day: date, last_day: date, tz: ZoneInfo
+    ) -> list[tuple[CldTask, Occurrence]]:
+        """Ocurrencias de todas las tareas del usuario que caen en
+        [first_day, last_day], entendidos como dias locales del usuario y ya
+        descontando las excluidas. first_day == last_day cubre el caso de un
+        solo dia (vista diaria); un rango de 7 dias cubre la vista semanal;
+        un mes completo cubre la mensual (una tarea recurrente puede aparecer
+        varias veces en ese caso)."""
+        occurrences: list[tuple[CldTask, Occurrence]] = []
         for task in self._cld_task_repository.list_by_user(user_id):
-            for occurrence_at in occurrences_in_range(task, first_day, last_day):
-                occurrences.append((task, occurrence_at))
+            for occurrence in occurrences_in_range(task, first_day, last_day, tz):
+                occurrences.append((task, occurrence))
         return occurrences
 
-    def list_for_day(self, user_id: int, day: date) -> list[tuple[CldTask, datetime]]:
-        return self.list_for_range(user_id, day, day)
+    def list_for_day(self, user_id: int, day: date, tz: ZoneInfo) -> list[tuple[CldTask, Occurrence]]:
+        return self.list_for_range(user_id, day, day, tz)
 
     def update_task(
         self,
         user_id: int,
         task_id: int,
+        tz: ZoneInfo,
         *,
         name: str,
         importance: Importance,
@@ -144,11 +156,11 @@ class CldTaskService:
         if task.repeat_mode is None:
             if scheduled_date is None or repeat_date is not None:
                 raise InvalidTaskDateError()
-            task.scheduled_date = scheduled_date
+            task.scheduled_date = to_utc(scheduled_date, tz)
         else:
             if repeat_date is None or scheduled_date is not None:
                 raise InvalidTaskDateError()
-            task.repeat_date = repeat_date
+            task.repeat_date = to_utc(repeat_date, tz)
 
         task.name = name
         task.importance = importance.value
@@ -163,8 +175,9 @@ class CldTaskService:
 
     def delete_task(self, user_id: int, task_id: int, occurrence_date: date | None = None) -> None:
         """Si occurrence_date viene y la tarea repite, borra solo esa
-        ocurrencia (la agrega a excluded_dates). En cualquier otro caso borra
-        la tarea completa (y con ella toda la serie, si aplica)."""
+        ocurrencia (la agrega a excluded_dates, que son dias locales del
+        usuario). En cualquier otro caso borra la tarea completa (y con ella
+        toda la serie, si aplica)."""
         task = self._get_owned_task(user_id, task_id)
 
         if occurrence_date is not None and task.repeat_mode is not None:
@@ -183,7 +196,10 @@ class CldTaskService:
         """Marca add_to_checklist=True (siempre, aunque no se pueda agregar
         ahora mismo) e intenta agregar esta ocurrencia puntual a la semana
         abierta actual. El bool indica si se agrego ahora o quedara pendiente
-        para cuando se cree una semana que cubra occurrence_date."""
+        para cuando se cree una semana que cubra occurrence_date.
+
+        `occurrence_date` ya es un dia local del usuario (viene del front,
+        que a su vez lo recibio calculado por el backend)."""
         task = self._get_owned_task(user_id, task_id)
         task.add_to_checklist = True
         self._cld_task_repository.commit()
@@ -197,7 +213,7 @@ class CldTaskService:
         self._task_repository.commit()
         return task, True
 
-    def _sync_to_current_week(self, user_id: int, task: CldTask) -> None:
+    def _sync_to_current_week(self, user_id: int, task: CldTask, tz: ZoneInfo) -> None:
         """Si hay una semana sin cerrar y la ocurrencia de esta tarea cae
         dentro de su rango, la agrega ahora mismo. Si no hay semana abierta o
         la fecha no cae en ese rango, no hace nada: se vuelve a evaluar cada
@@ -206,7 +222,7 @@ class CldTaskService:
         if week is None:
             return
 
-        checklist_task = build_checklist_task_for_week(task, week)
+        checklist_task = build_checklist_task_for_week(task, week, tz)
         if checklist_task is None:
             return
 

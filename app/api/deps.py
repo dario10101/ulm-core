@@ -2,11 +2,19 @@
 
 Las rutas solo declaran una dependencia del Service; nunca instancian ni
 importan un repository directamente.
+
+Aca viven tambien las dependencias de identidad (quien es el usuario y en que
+zona horaria vive): las rutas las piden por Depends en vez de leer settings,
+asi el dia que exista login solo cambia este archivo.
 """
+
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.db.models.user import User
 from app.db.session import get_db
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
@@ -40,6 +48,22 @@ from app.services.cld_task_service import CldTaskService
 from app.services.template_task_service import TemplateTaskService
 from app.services.week_service import WeekService
 from app.services.weight_service import WeightService
+
+
+def get_current_user_id() -> int:
+    """Usuario quemado: todavia no hay auth. Cuando exista login, este es el
+    unico lugar que cambia."""
+    return settings.default_user_id
+
+
+def get_current_timezone(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> ZoneInfo:
+    """Zona IANA del usuario. Todo calculo de calendario (dia, dia de semana,
+    dia del mes) se hace convirtiendo a esta zona; la BD guarda UTC."""
+    user = db.get(User, user_id)
+    return ZoneInfo(user.timezone if user is not None else settings.default_user_timezone)
 
 
 def get_weight_repository(db: Session = Depends(get_db)) -> WeightRepository:

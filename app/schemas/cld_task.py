@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.checklist import Importance
 
@@ -14,9 +14,24 @@ class RepeatMode(str, Enum):
     YEARLY = "YEARLY"
 
 
+def _reject_aware(value: datetime | None) -> datetime | None:
+    """La API recibe hora de pared del usuario, sin offset (ej.
+    "2026-09-15T19:30:00"): es el backend quien le adjunta la zona del
+    usuario y la convierte a UTC para guardarla. Un datetime con offset
+    significa que el cliente ya convirtio por su cuenta —posiblemente con la
+    zona del navegador, que no tiene por que ser la del usuario—, asi que se
+    rechaza en vez de aceptarlo en silencio."""
+    if value is not None and value.tzinfo is not None:
+        raise ValueError(
+            "Enviar la fecha en hora local sin zona horaria (ej. 2026-09-15T19:30:00)"
+        )
+    return value
+
+
 def _validate_same_day_duration(anchor: datetime | None, duration_minutes: int) -> None:
     """La hora final (anchor + duration_minutes) nunca puede cruzar la
-    medianoche del dia de anchor."""
+    medianoche del dia de anchor. Se evalua en hora local del usuario, que
+    es la que este ve en el formulario."""
     if anchor is None:
         return
     start_minutes = anchor.hour * 60 + anchor.minute
@@ -40,6 +55,8 @@ class CldTaskCreate(BaseModel):
     duration_minutes: int = Field(default=60, ge=1, le=1439)
     add_to_checklist: bool = False
     detail: str | None = Field(default=None, max_length=2000)
+
+    _no_tz = field_validator("scheduled_date", "repeat_date")(_reject_aware)
 
     @model_validator(mode="after")
     def validate_dates(self) -> "CldTaskCreate":
@@ -71,6 +88,8 @@ class CldTaskUpdate(BaseModel):
     repeat_date: datetime | None = None
     duration_minutes: int = Field(ge=1, le=1439)
     detail: str | None = Field(default=None, max_length=2000)
+
+    _no_tz = field_validator("scheduled_date", "repeat_date")(_reject_aware)
 
     @model_validator(mode="after")
     def validate_duration(self) -> "CldTaskUpdate":
@@ -112,6 +131,12 @@ class CldTaskOccurrenceRead(BaseModel):
     add_to_checklist: bool
     detail: str | None
     occurrence_at: datetime
+    """Instante exacto de la ocurrencia, en UTC. Sirve para ordenar."""
+    occurrence_local: datetime
+    """La misma ocurrencia en hora de pared del usuario, sin offset. Es lo
+    que el front usa para decidir en que dia y a que hora pintarla: asi no
+    repite la conversion de zona (que haria con la del navegador, no con la
+    del usuario)."""
 
 
 class CldTaskChecklistSyncRead(BaseModel):
