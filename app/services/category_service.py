@@ -1,37 +1,28 @@
 """Logica de negocio de categorias de checklist. Las rutas dependen de esto,
 nunca del repository directamente."""
 
-from typing import Sequence
-
 from app.db.models.checklist import ChecklistCategory
 from app.repositories.category_repository import CategoryRepository
-from app.schemas.checklist import CategoryWrite
-
-
-class CategoryNotFoundError(Exception):
-    """Se referencio un id de categoria que no existe (o no es del usuario)."""
-
-    def __init__(self, category_ids: set[int]) -> None:
-        self.category_ids = category_ids
-
-
-class CategoryInUseError(Exception):
-    """Se intento eliminar una categoria que todavia tiene tareas de template."""
-
-    def __init__(self, category_names: list[str]) -> None:
-        self.category_names = category_names
+from app.schemas.checklist import CategoryRead, CategoryWrite
+from app.services.errors import CategoryInUseError, CategoryNotFoundError
+from app.services.mappers import category_to_read
 
 
 class CategoryService:
     def __init__(self, repository: CategoryRepository) -> None:
         self._repository = repository
 
-    def list_categories(self, user_id: int, *, include_disabled: bool = False) -> Sequence[ChecklistCategory]:
-        if include_disabled:
-            return self._repository.list_all_by_user(user_id)
-        return self._repository.list_by_user(user_id)
+    def list_categories(
+        self, user_id: int, *, include_disabled: bool = False
+    ) -> list[CategoryRead]:
+        categories = (
+            self._repository.list_all_by_user(user_id)
+            if include_disabled
+            else self._repository.list_by_user(user_id)
+        )
+        return [category_to_read(c) for c in categories]
 
-    def enable_category(self, user_id: int, category_id: int) -> ChecklistCategory:
+    def enable_category(self, user_id: int, category_id: int) -> CategoryRead:
         """Reactiva una categoria DISABLED: vuelve a aparecer en todas las
         listas ENABLED, al final (nueva prioridad = ultima + 1)."""
         category = self._repository.get(category_id)
@@ -41,13 +32,10 @@ class CategoryService:
         enabled = self._repository.list_by_user(user_id)
         next_priority = max((c.priority for c in enabled), default=0) + 1
         self._repository.enable(category, next_priority)
-        self._repository.commit()
-        self._repository.refresh(category)
-        return category
+        self._repository.flush()
+        return category_to_read(category)
 
-    def replace_categories(
-        self, user_id: int, items: list[CategoryWrite]
-    ) -> list[ChecklistCategory]:
+    def replace_categories(self, user_id: int, items: list[CategoryWrite]) -> list[CategoryRead]:
         """Guardado en bloque: crea, renombra, reordena y elimina en una sola
         operacion (botones Guardar/Cancelar de la pantalla de administracion).
 
@@ -85,9 +73,9 @@ class CategoryService:
                 category.priority = priority
             result.append(category)
 
-        self._repository.commit()
-        for category in result:
-            self._repository.refresh(category)
+        # flush y no commit: el commit lo hace get_db al cerrar el request. Aca
+        # hace falta para que las categorias nuevas tengan su id asignado.
+        self._repository.flush()
 
         result.sort(key=lambda c: c.priority)
-        return result
+        return [category_to_read(c) for c in result]

@@ -1,6 +1,7 @@
 """Interfaz (Protocol) del acceso a datos de categorias de checklist."""
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from app.db.models.checklist import ChecklistCategory
 
@@ -24,6 +25,12 @@ class CategoryRepository(Protocol):
 
     def get(self, category_id: int) -> ChecklistCategory | None: ...
 
+    def flush(self) -> None:
+        """Manda los INSERT/UPDATE pendientes a la base sin cerrar la
+        transaccion. Sirve para obtener los ids autogenerados; el commit lo
+        hace `get_db` al final del request."""
+        ...
+
     def add(self, category: ChecklistCategory) -> None: ...
 
     def disable(self, category: ChecklistCategory) -> None:
@@ -35,7 +42,3 @@ class CategoryRepository(Protocol):
         ...
 
     def has_template_tasks(self, category_id: int) -> bool: ...
-
-    def commit(self) -> None: ...
-
-    def refresh(self, category: ChecklistCategory) -> None: ...

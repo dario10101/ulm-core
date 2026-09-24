@@ -24,8 +24,15 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from app.db.models.checklist import ChecklistCategory, ChecklistTask, ChecklistWeek, ChecklistWeekCategoryDayScore
-from app.db.models import user as user_model  # noqa: F401 -- registra 'users' para resolver el FK de cl_week
+from app.db.models import (
+    user as user_model,  # noqa: F401 -- registra 'users' para resolver el FK de cl_week
+)
+from app.db.models.checklist import (
+    ChecklistCategory,
+    ChecklistTask,
+    ChecklistWeek,
+    ChecklistWeekCategoryDayScore,
+)
 from app.db.session import SessionLocal
 from app.schemas.checklist import POINTS_BY_IMPORTANCE, Importance, TaskStatus
 
@@ -62,7 +69,9 @@ def day_of_week_for_offset(first_day: date, offset: int) -> int:
     return ((first_day.isoweekday() - 1 + offset) % 7) + 1
 
 
-def build_synthetic_week_rows(first_day: date, last_day: date, active_categories: list[int]) -> tuple[int, list[ChecklistWeekCategoryDayScore]]:
+def build_synthetic_week_rows(
+    first_day: date, last_day: date, active_categories: list[int]
+) -> tuple[int, list[ChecklistWeekCategoryDayScore]]:
     span_days = (last_day - first_day).days + 1
     rows: list[ChecklistWeekCategoryDayScore] = []
     week_total = 0
@@ -89,11 +98,15 @@ def build_synthetic_week_rows(first_day: date, last_day: date, active_categories
 def backfill_existing_closed_week(session, week: ChecklistWeek) -> None:
     """Calcula cl_week_category_day_score para una semana YA cerrada antes de
     que existiera esta tabla, desde sus cl_tasks reales."""
-    tasks = session.execute(
-        select(ChecklistTask).where(ChecklistTask.cl_week_id == week.id)
-    ).scalars().all()
+    tasks = (
+        session.execute(select(ChecklistTask).where(ChecklistTask.cl_week_id == week.id))
+        .scalars()
+        .all()
+    )
 
-    totals: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: {"score": 0, "points_possible": 0})
+    totals: dict[tuple[int, int], dict[str, int]] = defaultdict(
+        lambda: {"score": 0, "points_possible": 0}
+    )
     for task in tasks:
         points = POINTS_BY_IMPORTANCE[Importance(task.importance)]
         key = (task.category_id, int(task.day_of_week))
@@ -111,7 +124,9 @@ def backfill_existing_closed_week(session, week: ChecklistWeek) -> None:
                 points_possible=totals_for_key["points_possible"],
             )
         )
-    print(f"Backfill semana real {week.id} ({week.first_day} - {week.last_day}): {len(totals)} filas")
+    print(
+        f"Backfill semana real {week.id} ({week.first_day} - {week.last_day}): {len(totals)} filas"
+    )
 
 
 def main() -> None:
@@ -150,7 +165,9 @@ def main() -> None:
             if index < HOBBIES_WEEK_LIMIT:
                 active_categories.append(HOBBIES_CATEGORY_ID)
 
-            week_total, score_rows = build_synthetic_week_rows(first_day, last_day, active_categories)
+            week_total, score_rows = build_synthetic_week_rows(
+                first_day, last_day, active_categories
+            )
 
             week = ChecklistWeek(
                 user_id=user_id,

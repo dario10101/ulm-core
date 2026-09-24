@@ -2,7 +2,7 @@
 nunca del repository directamente."""
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.db.models.checklist import ChecklistTask, ChecklistWeek, ChecklistWeekCategoryDayScore
@@ -12,45 +12,27 @@ from app.repositories.task_repository import TaskRepository
 from app.repositories.template_task_repository import TemplateTaskRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
 from app.repositories.week_repository import WeekRepository
-from app.schemas.checklist import POINTS_BY_IMPORTANCE, CategoryStatus, Importance, TaskStatus
+from app.schemas.checklist import (
+    POINTS_BY_IMPORTANCE,
+    CategoryStatus,
+    Importance,
+    TaskStatus,
+    WeekRead,
+)
 from app.services.cld_task_sync import build_checklist_task_for_week
 from app.services.day_utils import parse_days
+from app.services.errors import (
+    InvalidWeekRangeError,
+    WeekAlreadyClosedError,
+    WeekAlreadyOpenError,
+    WeekEndInThePastError,
+    WeekHasPendingTasksError,
+    WeekNotFoundError,
+    WeekStartTooEarlyError,
+)
+from app.services.mappers import week_to_read
 
 MAX_WEEK_DAYS = 7
-
-
-class InvalidWeekRangeError(Exception):
-    """El rango elegido cubre menos de 1 o mas de 7 dias."""
-
-
-class WeekAlreadyOpenError(Exception):
-    """Ya existe una semana sin cerrar; hay que cerrarla antes de crear otra."""
-
-
-class WeekEndInThePastError(Exception):
-    """last_day no puede ser anterior a hoy."""
-
-
-class WeekStartTooEarlyError(Exception):
-    """first_day es anterior al minimo permitido (ver WeekService.get_next_range)."""
-
-    def __init__(self, min_first_day: date) -> None:
-        self.min_first_day = min_first_day
-
-
-class WeekNotFoundError(Exception):
-    """La semana solicitada no existe (o no es del usuario)."""
-
-
-class WeekAlreadyClosedError(Exception):
-    """La semana ya fue cerrada, no se puede cerrar de nuevo."""
-
-
-class WeekHasPendingTasksError(Exception):
-    """La semana todavia tiene tareas sin marcar (PENDING); no se puede cerrar."""
-
-    def __init__(self, pending_count: int) -> None:
-        self.pending_count = pending_count
 
 
 class WeekService:
@@ -70,11 +52,12 @@ class WeekService:
         self._score_repository = score_repository
         self._category_repository = category_repository
 
-    def get_current_week(self, user_id: int) -> ChecklistWeek | None:
+    def get_current_week(self, user_id: int) -> WeekRead | None:
         """La semana "actual" es la ultima sin cerrar, sin importar si la fecha
         de hoy cae dentro de su rango: una semana vencida sigue apareciendo
         hasta que el usuario la cierre explicitamente."""
-        return self._week_repository.get_current_open(user_id)
+        week = self._week_repository.get_current_open(user_id)
+        return week_to_read(week) if week is not None else None
 
     def get_next_range(self, user_id: int) -> tuple[date, date]:
         """Limites minimos para la proxima semana: el primer dia no puede ser
@@ -90,9 +73,7 @@ class WeekService:
         )
         return min_first_day, today
 
-    def create_week(
-        self, user_id: int, first_day: date, last_day: date, tz: ZoneInfo
-    ) -> ChecklistWeek:
+    def create_week(self, user_id: int, first_day: date, last_day: date, tz: ZoneInfo) -> WeekRead:
         if not (0 <= (last_day - first_day).days <= MAX_WEEK_DAYS - 1):
             raise InvalidWeekRangeError()
         if self._week_repository.get_current_open(user_id) is not None:
@@ -104,12 +85,11 @@ class WeekService:
         if first_day < min_first_day:
             raise WeekStartTooEarlyError(min_first_day)
 
-        week = ChecklistWeek(
-            user_id=user_id, first_day=first_day, last_day=last_day, closed=False
-        )
+        week = ChecklistWeek(user_id=user_id, first_day=first_day, last_day=last_day, closed=False)
         self._week_repository.add(week)
-        self._week_repository.commit()
-        self._week_repository.refresh(week)
+        # flush y no commit: hace falta el id de la semana para colgarle las
+        # tareas. El commit lo hace get_db al cerrar el request.
+        self._week_repository.flush()
 
         # El template no se modifica nunca al generar una semana: se copian sus
         # tareas a cl_tasks, una fila por cada dia al que aplican.
@@ -133,10 +113,10 @@ class WeekService:
             if checklist_task is not None:
                 self._task_repository.add(checklist_task)
 
-        self._task_repository.commit()
-        return week
+        self._task_repository.flush()
+        return week_to_read(week)
 
-    def close_week(self, user_id: int, week_id: int) -> ChecklistWeek:
+    def close_week(self, user_id: int, week_id: int) -> WeekRead:
         week = self._get_owned_week(week_id, user_id)
         if week.closed:
             raise WeekAlreadyClosedError()
@@ -150,7 +130,8 @@ class WeekService:
         pending_count = sum(
             1
             for task in tasks
-            if task.status == TaskStatus.PENDING.value and task.category_id not in disabled_category_ids
+            if task.status == TaskStatus.PENDING.value
+            and task.category_id not in disabled_category_ids
         )
         if pending_count > 0:
             raise WeekHasPendingTasksError(pending_count)
@@ -162,17 +143,20 @@ class WeekService:
         )
 
         week.closed = True
-        week.closed_date = datetime.now(timezone.utc)
+        week.closed_date = datetime.now(UTC)
         week.score = score
         self._save_category_day_scores(week.id, tasks)
-        self._week_repository.commit()
-        self._week_repository.refresh(week)
-        return week
+        self._week_repository.flush()
+        return week_to_read(week)
 
     def _disabled_category_ids(self, user_id: int, tasks: list[ChecklistTask]) -> set[int]:
         category_ids = {task.category_id for task in tasks}
         categories = self._category_repository.list_by_ids(user_id, list(category_ids))
-        return {category.id for category in categories if category.status != CategoryStatus.ENABLED.value}
+        return {
+            category.id
+            for category in categories
+            if category.status != CategoryStatus.ENABLED.value
+        }
 
     def _save_category_day_scores(self, week_id: int, tasks: list[ChecklistTask]) -> None:
         """Materializa cl_week_category_day_score al cerrar la semana: una
@@ -183,7 +167,9 @@ class WeekService:
         Grano (categoria, dia): el mas fino que sigue siendo generico —
         cualquier rollup mas grueso (semanal, mensual, por dia de la semana)
         sale de sumar estas pocas filas, sin volver a tocar cl_tasks."""
-        totals: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: {"score": 0, "points_possible": 0})
+        totals: dict[tuple[int, int], dict[str, int]] = defaultdict(
+            lambda: {"score": 0, "points_possible": 0}
+        )
         for task in tasks:
             points = POINTS_BY_IMPORTANCE[Importance(task.importance)]
             key = (task.category_id, int(task.day_of_week))

@@ -1,6 +1,6 @@
 """Implementacion del CategoryRepository sobre SQLAlchemy/Postgres."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import case, exists, select
 from sqlalchemy.orm import Session
@@ -58,6 +58,9 @@ class SqlAlchemyCategoryRepository:
     def get(self, category_id: int) -> ChecklistCategory | None:
         return self._db.get(ChecklistCategory, category_id)
 
+    def flush(self) -> None:
+        self._db.flush()
+
     def add(self, category: ChecklistCategory) -> None:
         self._db.add(category)
 
@@ -71,14 +74,6 @@ class SqlAlchemyCategoryRepository:
     def has_template_tasks(self, category_id: int) -> bool:
         return bool(
             self._db.scalar(
-                select(
-                    exists().where(ChecklistTemplateTask.category_id == category_id)
-                )
+                select(exists().where(ChecklistTemplateTask.category_id == category_id))
             )
         )
-
-    def commit(self) -> None:
-        self._db.commit()
-
-    def refresh(self, category: ChecklistCategory) -> None:
-        self._db.refresh(category)

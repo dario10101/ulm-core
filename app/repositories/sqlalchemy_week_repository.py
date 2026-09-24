@@ -1,7 +1,7 @@
 """Implementacion del WeekRepository sobre SQLAlchemy/Postgres."""
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,6 +31,9 @@ class SqlAlchemyWeekRepository:
 
     def get(self, week_id: int) -> ChecklistWeek | None:
         return self._db.get(ChecklistWeek, week_id)
+
+    def flush(self) -> None:
+        self._db.flush()
 
     def add(self, week: ChecklistWeek) -> None:
         self._db.add(week)
@@ -68,9 +71,3 @@ class SqlAlchemyWeekRepository:
             .scalars()
             .all()
         )
-
-    def commit(self) -> None:
-        self._db.commit()
-
-    def refresh(self, week: ChecklistWeek) -> None:
-        self._db.refresh(week)

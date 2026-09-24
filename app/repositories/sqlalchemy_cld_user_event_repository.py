@@ -1,7 +1,7 @@
 """Implementacion del CldUserEventRepository sobre SQLAlchemy/Postgres."""
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +15,9 @@ class SqlAlchemyCldUserEventRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def list_in_range(self, user_id: int, range_start: date, range_end: date) -> Sequence[CldUserEvent]:
+    def list_in_range(
+        self, user_id: int, range_start: date, range_end: date
+    ) -> Sequence[CldUserEvent]:
         return (
             self._db.execute(
                 select(CldUserEvent)

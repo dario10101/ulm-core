@@ -119,7 +119,9 @@ def get_week_service(
     task_repository: TaskRepository = Depends(get_task_repository),
     template_task_repository: TemplateTaskRepository = Depends(get_template_task_repository),
     cld_task_repository: CldTaskRepository = Depends(get_cld_task_repository),
-    score_repository: WeekCategoryDayScoreRepository = Depends(get_week_category_day_score_repository),
+    score_repository: WeekCategoryDayScoreRepository = Depends(
+        get_week_category_day_score_repository
+    ),
     category_repository: CategoryRepository = Depends(get_category_repository),
 ) -> WeekService:
     return WeekService(
@@ -134,7 +136,9 @@ def get_week_service(
 
 def get_checklist_analytics_service(
     week_repository: WeekRepository = Depends(get_week_repository),
-    score_repository: WeekCategoryDayScoreRepository = Depends(get_week_category_day_score_repository),
+    score_repository: WeekCategoryDayScoreRepository = Depends(
+        get_week_category_day_score_repository
+    ),
     category_repository: CategoryRepository = Depends(get_category_repository),
 ) -> ChecklistAnalyticsService:
     return ChecklistAnalyticsService(week_repository, score_repository, category_repository)
@@ -154,7 +158,9 @@ def get_cld_task_service(
     week_repository: WeekRepository = Depends(get_week_repository),
     task_repository: TaskRepository = Depends(get_task_repository),
 ) -> CldTaskService:
-    return CldTaskService(cld_task_repository, category_repository, week_repository, task_repository)
+    return CldTaskService(
+        cld_task_repository, category_repository, week_repository, task_repository
+    )
 
 
 def get_cld_event_repository(db: Session = Depends(get_db)) -> CldEventRepository:

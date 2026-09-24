@@ -1,6 +1,7 @@
 """Interfaz (Protocol) del acceso a datos de tareas concretas de una semana de checklist."""
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from app.db.models.checklist import ChecklistTask
 
@@ -19,10 +20,12 @@ class TaskRepository(Protocol):
 
     def get(self, task_id: int) -> ChecklistTask | None: ...
 
+    def flush(self) -> None:
+        """Manda los INSERT/UPDATE pendientes a la base sin cerrar la
+        transaccion. Sirve para obtener los ids autogenerados; el commit lo
+        hace `get_db` al final del request."""
+        ...
+
     def add(self, task: ChecklistTask) -> None: ...
 
     def delete(self, task: ChecklistTask) -> None: ...
-
-    def commit(self) -> None: ...
-
-    def refresh(self, task: ChecklistTask) -> None: ...

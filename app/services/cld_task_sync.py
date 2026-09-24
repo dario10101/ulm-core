@@ -17,7 +17,7 @@ y reciben la zona como parametro.
 
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from app.db.models.checklist import ChecklistTask, ChecklistWeek
@@ -46,7 +46,7 @@ def to_local(value: datetime, tz: ZoneInfo) -> datetime:
     sin tzinfo mientras que Postgres los devuelve con el. Asumir UTC en ambos
     casos hace que los dos motores se comporten igual."""
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.astimezone(tz).replace(tzinfo=None)
 
 
@@ -58,7 +58,7 @@ def to_utc(local_value: datetime, tz: ZoneInfo) -> datetime:
     verano. En una hora ambigua (la que ocurre dos veces al atrasar el reloj)
     Python toma la primera por defecto (fold=0); en `America/Bogota` el caso
     no existe porque no hay horario de verano."""
-    return local_value.replace(tzinfo=tz).astimezone(timezone.utc)
+    return local_value.replace(tzinfo=tz).astimezone(UTC)
 
 
 def _clamp_day(year: int, month: int, day: int) -> int:
@@ -87,7 +87,10 @@ def compute_occurrence_in_range(
         return occurrence if occurrence <= range_end else None
 
     if repeat_mode == "MONTHLY":
-        for year, month in {(range_start.year, range_start.month), (range_end.year, range_end.month)}:
+        for year, month in {
+            (range_start.year, range_start.month),
+            (range_end.year, range_end.month),
+        }:
             occurrence = date(year, month, _clamp_day(year, month, anchor.day))
             if range_start <= occurrence <= range_end:
                 return occurrence
@@ -151,7 +154,9 @@ def compute_occurrences_in_range(
 
     if repeat_mode == "YEARLY":
         years = {year for year, _ in _months_in_range(range_start, range_end)}
-        occurrences = [date(year, anchor.month, _clamp_day(year, anchor.month, anchor.day)) for year in years]
+        occurrences = [
+            date(year, anchor.month, _clamp_day(year, anchor.month, anchor.day)) for year in years
+        ]
         return sorted(o for o in occurrences if range_start <= o <= range_end)
 
     raise ValueError(f"repeat_mode desconocido: {repeat_mode}")

@@ -5,9 +5,8 @@ el template).
 El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-
 
 from app.main import app
 from app.services.cld_task_sync import (
@@ -16,10 +15,7 @@ from app.services.cld_task_sync import (
     to_local,
     to_utc,
 )
-
-
 from tests.conftest import client
-
 
 # Las semanas se validan contra hoy y contra la semana anterior (ver
 # WeekService.get_next_range), asi que las fechas de los tests de sync se
@@ -69,38 +65,38 @@ def _close_current_week_if_any():
 
 
 def test_occurrence_one_off_inside_range():
-    anchor = datetime(2026, 11, 5, 7, 30, tzinfo=timezone.utc)
+    anchor = datetime(2026, 11, 5, 7, 30, tzinfo=UTC)
     result = compute_occurrence_in_range(None, anchor, date(2026, 11, 2), date(2026, 11, 8))
     assert result == date(2026, 11, 5)
 
 
 def test_occurrence_one_off_outside_range_is_none():
-    anchor = datetime(2026, 11, 1, 7, 30, tzinfo=timezone.utc)
+    anchor = datetime(2026, 11, 1, 7, 30, tzinfo=UTC)
     result = compute_occurrence_in_range(None, anchor, date(2026, 11, 2), date(2026, 11, 8))
     assert result is None
 
 
 def test_occurrence_weekly_always_matches_the_week():
-    anchor = datetime(2026, 10, 1, 7, 30, tzinfo=timezone.utc)  # jueves (isoweekday 4)
+    anchor = datetime(2026, 10, 1, 7, 30, tzinfo=UTC)  # jueves (isoweekday 4)
     assert anchor.isoweekday() == 4
     result = compute_occurrence_in_range("WEEKLY", anchor, date(2026, 11, 2), date(2026, 11, 8))
     assert result == date(2026, 11, 5)  # jueves de esa semana
 
 
 def test_occurrence_monthly_clamps_to_last_day_of_shorter_month():
-    anchor = datetime(2027, 1, 31, 20, 0, tzinfo=timezone.utc)  # 31, febrero no tiene ese dia
+    anchor = datetime(2027, 1, 31, 20, 0, tzinfo=UTC)  # 31, febrero no tiene ese dia
     result = compute_occurrence_in_range("MONTHLY", anchor, date(2027, 2, 25), date(2027, 3, 3))
     assert result == date(2027, 2, 28)
 
 
 def test_occurrence_monthly_no_match_returns_none():
-    anchor = datetime(2027, 1, 15, 20, 0, tzinfo=timezone.utc)
+    anchor = datetime(2027, 1, 15, 20, 0, tzinfo=UTC)
     result = compute_occurrence_in_range("MONTHLY", anchor, date(2027, 2, 25), date(2027, 3, 3))
     assert result is None
 
 
 def test_occurrence_yearly_matches_day_and_month():
-    anchor = datetime(2020, 12, 25, 9, 0, tzinfo=timezone.utc)
+    anchor = datetime(2020, 12, 25, 9, 0, tzinfo=UTC)
     result = compute_occurrence_in_range("YEARLY", anchor, date(2026, 12, 21), date(2026, 12, 27))
     assert result == date(2026, 12, 25)
 
@@ -109,19 +105,21 @@ def test_occurrence_yearly_matches_day_and_month():
 
 
 def test_occurrences_weekly_repeats_every_seven_days_across_a_month():
-    anchor = datetime(2026, 10, 1, 7, 30, tzinfo=timezone.utc)  # jueves
+    anchor = datetime(2026, 10, 1, 7, 30, tzinfo=UTC)  # jueves
     result = compute_occurrences_in_range("WEEKLY", anchor, date(2026, 11, 1), date(2026, 11, 30))
     assert result == [date(2026, 11, 5), date(2026, 11, 12), date(2026, 11, 19), date(2026, 11, 26)]
 
 
 def test_occurrences_one_off_gives_at_most_one():
-    anchor = datetime(2026, 11, 5, 7, 30, tzinfo=timezone.utc)
-    assert compute_occurrences_in_range(None, anchor, date(2026, 11, 1), date(2026, 11, 30)) == [date(2026, 11, 5)]
+    anchor = datetime(2026, 11, 5, 7, 30, tzinfo=UTC)
+    assert compute_occurrences_in_range(None, anchor, date(2026, 11, 1), date(2026, 11, 30)) == [
+        date(2026, 11, 5)
+    ]
     assert compute_occurrences_in_range(None, anchor, date(2026, 12, 1), date(2026, 12, 31)) == []
 
 
 def test_occurrences_monthly_gives_one_per_month_covered():
-    anchor = datetime(2027, 1, 31, 20, 0, tzinfo=timezone.utc)
+    anchor = datetime(2027, 1, 31, 20, 0, tzinfo=UTC)
     result = compute_occurrences_in_range("MONTHLY", anchor, date(2027, 1, 1), date(2027, 3, 31))
     assert result == [date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)]
 
@@ -594,7 +592,9 @@ def test_delete_single_occurrence_of_repeating_task_hides_only_that_day():
     day1 = _d(220)
     day2 = _d(227)
 
-    delete_response = client.delete(f"/api/v1/calendar-tasks/{created['id']}?occurrence_date={day1}")
+    delete_response = client.delete(
+        f"/api/v1/calendar-tasks/{created['id']}?occurrence_date={day1}"
+    )
     assert delete_response.status_code == 204
 
     body_day1 = client.get(f"/api/v1/calendar-tasks?date={day1}").json()
@@ -620,8 +620,14 @@ def test_delete_whole_series_removes_every_occurrence():
     delete_response = client.delete(f"/api/v1/calendar-tasks/{created['id']}")
     assert delete_response.status_code == 204
 
-    assert all(item["id"] != created["id"] for item in client.get(f"/api/v1/calendar-tasks?date={_d(230)}").json())
-    assert all(item["id"] != created["id"] for item in client.get(f"/api/v1/calendar-tasks?date={_d(237)}").json())
+    assert all(
+        item["id"] != created["id"]
+        for item in client.get(f"/api/v1/calendar-tasks?date={_d(230)}").json()
+    )
+    assert all(
+        item["id"] != created["id"]
+        for item in client.get(f"/api/v1/calendar-tasks?date={_d(237)}").json()
+    )
 
 
 def test_delete_unknown_task_returns_404():
@@ -785,7 +791,9 @@ def test_disabled_category_hides_its_calendar_tasks():
     before = client.get(f"/api/v1/calendar-tasks?date={day}").json()
     assert any(item["name"] == "Should disappear" for item in before)
 
-    remaining = [c for c in client.get("/api/v1/checklists/categories").json() if c["id"] != category_id]
+    remaining = [
+        c for c in client.get("/api/v1/checklists/categories").json() if c["id"] != category_id
+    ]
     client.put(
         "/api/v1/checklists/categories",
         json={"items": [{"id": c["id"], "name": c["name"]} for c in remaining]},
@@ -888,7 +896,7 @@ def test_monthly_repeat_uses_the_local_day_of_month():
 def test_same_instant_falls_on_different_local_days_per_timezone():
     """La prueba de que la zona se usa de verdad y no quedo un default
     escondido: el mismo instante UTC cae en dias distintos segun la zona."""
-    instant = datetime(2027, 5, 11, 2, 30, tzinfo=timezone.utc)
+    instant = datetime(2027, 5, 11, 2, 30, tzinfo=UTC)
     assert to_local(instant, BOGOTA).date() == date(2027, 5, 10)  # 21:30 del 10
     assert to_local(instant, MADRID).date() == date(2027, 5, 11)  # 04:30 del 11
 

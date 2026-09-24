@@ -22,9 +22,7 @@ def _reject_aware(value: datetime | None) -> datetime | None:
     zona del navegador, que no tiene por que ser la del usuario—, asi que se
     rechaza en vez de aceptarlo en silencio."""
     if value is not None and value.tzinfo is not None:
-        raise ValueError(
-            "Enviar la fecha en hora local sin zona horaria (ej. 2026-09-15T19:30:00)"
-        )
+        raise ValueError("Enviar la fecha en hora local sin zona horaria (ej. 2026-09-15T19:30:00)")
     return value
 
 

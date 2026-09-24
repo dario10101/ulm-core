@@ -4,14 +4,11 @@ nunca del repository directamente."""
 import math
 from datetime import date
 from decimal import Decimal
-from typing import Sequence
 
-from app.db.models.weight import WeightRecord
 from app.repositories.weight_repository import WeightRepository
-
-
-class WeightNotFoundError(Exception):
-    """El registro de peso solicitado no existe."""
+from app.schemas.weight import WeightRead
+from app.services.errors import WeightNotFoundError
+from app.services.mappers import weight_to_read
 
 
 class WeightService:
@@ -20,9 +17,11 @@ class WeightService:
 
     def create_weight(
         self, *, user_id: int, weight_kg: Decimal, recorded_on: date, note: str | None
-    ) -> WeightRecord:
-        return self._repository.create(
-            user_id=user_id, weight_kg=weight_kg, recorded_on=recorded_on, note=note
+    ) -> WeightRead:
+        return weight_to_read(
+            self._repository.create(
+                user_id=user_id, weight_kg=weight_kg, recorded_on=recorded_on, note=note
+            )
         )
 
     def list_weights(
@@ -33,7 +32,7 @@ class WeightService:
         end_date: date | None,
         page: int,
         page_size: int,
-    ) -> tuple[Sequence[WeightRecord], int, int]:
+    ) -> tuple[list[WeightRead], int, int]:
         offset = (page - 1) * page_size
         items, total = self._repository.list(
             user_id=user_id,
@@ -43,19 +42,25 @@ class WeightService:
             limit=page_size,
         )
         total_pages = math.ceil(total / page_size) if total else 0
-        return items, total, total_pages
+        return [weight_to_read(item) for item in items], total, total_pages
 
     def update_weight(
-        self, weight_id: int, *, weight_kg: Decimal, recorded_on: date, note: str | None
-    ) -> WeightRecord:
+        self,
+        weight_id: int,
+        *,
+        user_id: int,
+        weight_kg: Decimal,
+        recorded_on: date,
+        note: str | None,
+    ) -> WeightRead:
         record = self._repository.update(
-            weight_id, weight_kg=weight_kg, recorded_on=recorded_on, note=note
+            weight_id, user_id=user_id, weight_kg=weight_kg, recorded_on=recorded_on, note=note
         )
         if record is None:
             raise WeightNotFoundError(weight_id)
-        return record
+        return weight_to_read(record)
 
-    def delete_weight(self, weight_id: int) -> None:
-        deleted = self._repository.delete(weight_id)
+    def delete_weight(self, weight_id: int, *, user_id: int) -> None:
+        deleted = self._repository.delete(weight_id, user_id=user_id)
         if not deleted:
             raise WeightNotFoundError(weight_id)

@@ -1,7 +1,7 @@
 """Modelo ORM de tareas de calendario (cld_tasks): tareas puntuales o
 recurrentes, con sincronizacion opcional hacia el checklist semanal."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -40,5 +40,5 @@ class CldTask(Base):
     excluded_dates: Mapped[str | None] = mapped_column(Text, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_modified_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

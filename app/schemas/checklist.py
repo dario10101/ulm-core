@@ -106,7 +106,9 @@ class WeekCreate(BaseModel):
     def validate_range(cls, last_day: date, info: ValidationInfo) -> date:
         first_day = info.data.get("first_day")
         if first_day is not None and not (0 <= (last_day - first_day).days <= 6):
-            raise ValueError("La semana debe cubrir entre 1 y 7 dias (last_day entre first_day y first_day+6)")
+            raise ValueError(
+                "La semana debe cubrir entre 1 y 7 dias (last_day entre first_day y first_day+6)"
+            )
         return last_day
 
 

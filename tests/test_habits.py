@@ -1,6 +1,5 @@
 """Pruebas unitarias del modulo dummy de habitos."""
 
-
 from tests.conftest import client
 
 

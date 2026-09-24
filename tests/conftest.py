@@ -19,9 +19,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base_class import Base
-from app.db.seed import ensure_default_user
-from app.db.session import get_db
-from app.main import app
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
 from app.db.models import checklist as checklist_model  # noqa: F401
@@ -31,6 +28,9 @@ from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
 from app.db.models import dummy as dummy_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
+from app.db.seed import ensure_default_user
+from app.db.session import get_db
+from app.main import app
 
 # SQLite en memoria para no depender de Postgres. StaticPool mantiene una sola
 # conexion viva, que es lo que hace que ":memory:" persista entre operaciones.
@@ -77,7 +77,19 @@ def db_session():
     session = Session(bind=connection, join_transaction_mode="create_savepoint")
     ensure_default_user(session)
 
-    app.dependency_overrides[get_db] = lambda: session
+    # Se replica la semantica de produccion (una transaccion por request, ver
+    # app/db/session.py) en vez de entregar la sesion pelada: asi los tests
+    # ejercitan el mismo commit/rollback que la app real. El commit libera un
+    # savepoint, y el rollback de abajo deshace todo igual.
+    def override_get_db():
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
     try:
         yield session
     finally:

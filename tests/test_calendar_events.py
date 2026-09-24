@@ -7,14 +7,10 @@ El engine, el cliente y el aislamiento por test viven en conftest.py.
 
 from datetime import date, timedelta
 
-
 from app.db.models.cld_event import CldEvent
 from app.db.models.cld_user_event import CldUserEvent
 from app.main import app
-
-
 from tests.conftest import client
-
 
 TODAY = date.today()
 
@@ -39,7 +35,15 @@ def _insert(db, model, **kwargs) -> None:
 
 
 def test_single_day_event_gives_one_marker(db_session):
-    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(500), last_day=_d(500), name="Test holiday", detail=None)
+    _insert(
+        db_session,
+        CldEvent,
+        code="HOLIDAY",
+        first_day=_d(500),
+        last_day=_d(500),
+        name="Test holiday",
+        detail=None,
+    )
 
     response = client.get(f"/api/v1/calendar-events?first_day={_d(497)}&last_day={_d(503)}")
     assert response.status_code == 200
@@ -52,7 +56,15 @@ def test_single_day_event_gives_one_marker(db_session):
 
 
 def test_holiday_outside_range_is_not_returned(db_session):
-    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(510), last_day=_d(510), name="Far holiday", detail=None)
+    _insert(
+        db_session,
+        CldEvent,
+        code="HOLIDAY",
+        first_day=_d(510),
+        last_day=_d(510),
+        name="Far holiday",
+        detail=None,
+    )
 
     response = client.get(f"/api/v1/calendar-events?first_day={_d(497)}&last_day={_d(503)}").json()
     assert all(m["name"] != "Far holiday" for m in response)
@@ -96,7 +108,9 @@ def test_multi_day_event_gives_only_the_boundary_that_falls_in_the_requested_ran
     )
 
     # Semana que solo cubre el inicio del viaje
-    start_week = client.get(f"/api/v1/calendar-events?first_day={_d(529)}&last_day={_d(535)}").json()
+    start_week = client.get(
+        f"/api/v1/calendar-events?first_day={_d(529)}&last_day={_d(535)}"
+    ).json()
     start_matching = [m for m in start_week if m["name"] == "Long trip"]
     assert len(start_matching) == 1
     assert start_matching[0]["marker_type"] == "start"
@@ -108,12 +122,22 @@ def test_multi_day_event_gives_only_the_boundary_that_falls_in_the_requested_ran
     assert end_matching[0]["marker_type"] == "end"
 
     # Semana intermedia, sin ninguno de los dos bordes: no aparece
-    middle_week = client.get(f"/api/v1/calendar-events?first_day={_d(536)}&last_day={_d(536)}").json()
+    middle_week = client.get(
+        f"/api/v1/calendar-events?first_day={_d(536)}&last_day={_d(536)}"
+    ).json()
     assert all(m["name"] != "Long trip" for m in middle_week)
 
 
 def test_ranges_endpoint_returns_the_full_span_not_just_boundaries(db_session):
-    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(550), last_day=_d(550), name="Range test holiday", detail=None)
+    _insert(
+        db_session,
+        CldEvent,
+        code="HOLIDAY",
+        first_day=_d(550),
+        last_day=_d(550),
+        name="Range test holiday",
+        detail=None,
+    )
     category_id = _make_category("Ranges test category")
     _insert(
         db_session,
@@ -127,7 +151,9 @@ def test_ranges_endpoint_returns_the_full_span_not_just_boundaries(db_session):
         detail=None,
     )
 
-    response = client.get(f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}").json()
+    response = client.get(
+        f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}"
+    ).json()
 
     holiday = next(r for r in response if r["name"] == "Range test holiday")
     assert holiday["first_day"] == holiday["last_day"] == _d(550).isoformat()
@@ -142,7 +168,17 @@ def test_ranges_endpoint_returns_the_full_span_not_just_boundaries(db_session):
 
 
 def test_ranges_endpoint_excludes_events_entirely_outside_the_range(db_session):
-    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(570), last_day=_d(570), name="Out of range holiday", detail=None)
+    _insert(
+        db_session,
+        CldEvent,
+        code="HOLIDAY",
+        first_day=_d(570),
+        last_day=_d(570),
+        name="Out of range holiday",
+        detail=None,
+    )
 
-    response = client.get(f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}").json()
+    response = client.get(
+        f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}"
+    ).json()
     assert all(r["name"] != "Out of range holiday" for r in response)

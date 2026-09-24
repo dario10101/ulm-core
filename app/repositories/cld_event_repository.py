@@ -1,7 +1,8 @@
 """Interfaz (Protocol) del acceso a datos de eventos generales (cld_events)."""
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from app.db.models.cld_event import CldEvent
 

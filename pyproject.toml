@@ -1,0 +1,44 @@
+# Configuracion de herramientas de ULM Core.
+# El proyecto no se empaqueta: esto es solo para ruff.
+
+[tool.ruff]
+# 100 y no los 88 por defecto: es el ancho que ya venia usando el codigo, asi
+# que adoptar el formateador no produce un diff gigante por reajustes.
+line-length = 100
+target-version = "py312"
+extend-exclude = ["venv", "migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle: errores de estilo
+    "F",   # pyflakes: imports sin usar, variables no definidas
+    "I",   # isort: orden de imports
+    "UP",  # pyupgrade: sintaxis vieja que ya tiene reemplazo en 3.12
+    "B",   # flake8-bugbear: trampas comunes (mutables por defecto, etc.)
+]
+ignore = [
+    # `class X(str, Enum)` es el idiom que usa todo el proyecto y con el que
+    # Pydantic serializa como se espera. Migrar a StrEnum cambiaria el
+    # resultado de str() y no aporta nada aca.
+    "UP042",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# `Depends(...)`, `Query(...)` y `Body(...)` como valor por defecto son LA
+# forma de declarar dependencias en FastAPI, no el bug de argumento mutable
+# que B008 busca.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body"]
+
+[tool.ruff.lint.per-file-ignores]
+# Los __init__ y main.py importan modelos solo para registrarlos en el
+# metadata de SQLAlchemy; no se "usan" en el archivo.
+"app/main.py" = ["F401"]
+"migrations/env.py" = ["F401"]
+"tests/*" = ["F401"]
+# B904 (`raise ... from`) en las rutas: traducen un error de dominio a
+# HTTPException, que FastAPI convierte en respuesta. Ese traceback no se
+# muestra nunca, asi que encadenar no aporta y agrega ruido a cada except.
+"app/api/routes/*" = ["B904"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests", "scripts"]

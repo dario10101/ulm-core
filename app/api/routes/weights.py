@@ -8,14 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_current_user_id, get_weight_service
 from app.schemas.weight import WeightCreate, WeightPage, WeightRead, WeightUpdate
-from app.services.weight_service import WeightNotFoundError, WeightService
+from app.services.errors import WeightNotFoundError
+from app.services.weight_service import WeightService
 
 router = APIRouter(prefix="/weights", tags=["weights"])
 
 
 @router.post("/", response_model=WeightRead, status_code=201)
 def create_weight(
-    payload: WeightCreate, user_id: int = Depends(get_current_user_id), service: WeightService = Depends(get_weight_service)
+    payload: WeightCreate,
+    user_id: int = Depends(get_current_user_id),
+    service: WeightService = Depends(get_weight_service),
 ) -> WeightRead:
     record = service.create_weight(
         user_id=user_id,
@@ -51,11 +54,13 @@ def list_weights(
 def update_weight(
     weight_id: int,
     payload: WeightUpdate,
+    user_id: int = Depends(get_current_user_id),
     service: WeightService = Depends(get_weight_service),
 ) -> WeightRead:
     try:
         return service.update_weight(
             weight_id,
+            user_id=user_id,
             weight_kg=Decimal(str(payload.weight_kg)),
             recorded_on=payload.recorded_on,
             note=payload.note,
@@ -66,9 +71,11 @@ def update_weight(
 
 @router.delete("/{weight_id}", status_code=204)
 def delete_weight(
-    weight_id: int, service: WeightService = Depends(get_weight_service)
+    weight_id: int,
+    user_id: int = Depends(get_current_user_id),
+    service: WeightService = Depends(get_weight_service),
 ) -> None:
     try:
-        service.delete_weight(weight_id)
+        service.delete_weight(weight_id, user_id=user_id)
     except WeightNotFoundError:
         raise HTTPException(status_code=404, detail="Registro de peso no encontrado")

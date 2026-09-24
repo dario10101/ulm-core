@@ -1,6 +1,6 @@
 """Implementacion del TemplateTaskRepository sobre SQLAlchemy/Postgres."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ class SqlAlchemyTemplateTaskRepository:
                 select(ChecklistTemplateTask)
                 .join(ChecklistCategory, ChecklistTemplateTask.category_id == ChecklistCategory.id)
                 .where(
-                    ChecklistCategory.user_id == user_id,
+                    ChecklistTemplateTask.user_id == user_id,
                     ChecklistCategory.status == CategoryStatus.ENABLED.value,
                 )
                 .order_by(ChecklistTemplateTask.id)
@@ -30,6 +30,9 @@ class SqlAlchemyTemplateTaskRepository:
 
     def get(self, task_id: int) -> ChecklistTemplateTask | None:
         return self._db.get(ChecklistTemplateTask, task_id)
+
+    def flush(self) -> None:
+        self._db.flush()
 
     def add(self, task: ChecklistTemplateTask) -> None:
         self._db.add(task)
@@ -53,9 +56,3 @@ class SqlAlchemyTemplateTaskRepository:
                 )
             )
         )
-
-    def commit(self) -> None:
-        self._db.commit()
-
-    def refresh(self, task: ChecklistTemplateTask) -> None:
-        self._db.refresh(task)

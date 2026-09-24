@@ -1,6 +1,7 @@
 """Interfaz (Protocol) del acceso a datos de semanas de checklist."""
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from app.db.models.checklist import ChecklistWeek
 
@@ -11,6 +12,12 @@ class WeekRepository(Protocol):
     def get_latest(self, user_id: int) -> ChecklistWeek | None: ...
 
     def get(self, week_id: int) -> ChecklistWeek | None: ...
+
+    def flush(self) -> None:
+        """Manda los INSERT/UPDATE pendientes a la base sin cerrar la
+        transaccion. Sirve para obtener los ids autogenerados; el commit lo
+        hace `get_db` al final del request."""
+        ...
 
     def add(self, week: ChecklistWeek) -> None: ...
 
@@ -24,7 +31,3 @@ class WeekRepository(Protocol):
         incluyendo las que cruzan fin de anio (vista mensual: cada dia se
         desagrega despues a su mes/anio real, ver ChecklistAnalyticsService)."""
         ...
-
-    def commit(self) -> None: ...
-
-    def refresh(self, week: ChecklistWeek) -> None: ...

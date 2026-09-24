@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "ULM Core"
     environment: str = "development"
     api_prefix: str = "/api/v1"
+    # DEBUG, INFO, WARNING, ERROR. Ver app/core/logging.py.
+    log_level: str = "INFO"
 
     # Postgres local via Docker, ver ulm-repository/postgres-local-setup.md
     database_url: str = "postgresql+psycopg2://ulm_user:ulm_password@localhost:5432/ulm_db"

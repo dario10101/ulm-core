@@ -12,31 +12,20 @@ puntual*, ese dia se separa de la fila original:
 Asi una edicion/eliminacion en un dia nunca afecta los demas dias.
 """
 
-from typing import Sequence
-
 from app.db.models.checklist import ChecklistTemplateTask
 from app.repositories.template_task_repository import TemplateTaskRepository
-from app.schemas.checklist import Importance
+from app.schemas.checklist import Importance, TemplateTaskRead
 from app.services.day_utils import parse_days, serialize_days
-
-
-class TemplateTaskNotFoundError(Exception):
-    """La tarea (o el dia solicitado dentro de ella) no existe para este usuario."""
-
-
-class CategoryNotFoundError(Exception):
-    """La categoria referenciada no existe (o no es del usuario)."""
-
-    def __init__(self, category_id: int) -> None:
-        self.category_id = category_id
+from app.services.errors import CategoryNotFoundError, TemplateTaskNotFoundError
+from app.services.mappers import template_task_to_read
 
 
 class TemplateTaskService:
     def __init__(self, repository: TemplateTaskRepository) -> None:
         self._repository = repository
 
-    def list_tasks(self, user_id: int) -> Sequence[ChecklistTemplateTask]:
-        return self._repository.list_by_user(user_id)
+    def list_tasks(self, user_id: int) -> list[TemplateTaskRead]:
+        return [template_task_to_read(t) for t in self._repository.list_by_user(user_id)]
 
     def create_task(
         self,
@@ -47,11 +36,12 @@ class TemplateTaskService:
         category_id: int,
         days: list[int],
         detail: str | None = None,
-    ) -> ChecklistTemplateTask:
+    ) -> TemplateTaskRead:
         if not self._repository.category_belongs_to_user(category_id, user_id):
             raise CategoryNotFoundError(category_id)
 
         task = ChecklistTemplateTask(
+            user_id=user_id,
             name=name,
             day_of_week=serialize_days(days),
             importance=importance.value,
@@ -59,9 +49,8 @@ class TemplateTaskService:
             detail=detail,
         )
         self._repository.add(task)
-        self._repository.commit()
-        self._repository.refresh(task)
-        return task
+        self._repository.flush()
+        return template_task_to_read(task)
 
     def update_task_for_day(
         self,
@@ -73,7 +62,7 @@ class TemplateTaskService:
         importance: Importance,
         category_id: int,
         detail: str | None = None,
-    ) -> ChecklistTemplateTask:
+    ) -> TemplateTaskRead:
         task = self._get_owned_task(task_id, user_id)
         days = parse_days(task.day_of_week)
         if day not in days:
@@ -88,12 +77,12 @@ class TemplateTaskService:
             task.importance = importance.value
             task.category_id = category_id
             task.detail = detail
-            self._repository.commit()
-            self._repository.refresh(task)
-            return task
+            self._repository.flush()
+            return template_task_to_read(task)
 
         task.day_of_week = serialize_days(remaining_days)
         split_task = ChecklistTemplateTask(
+            user_id=user_id,
             name=name,
             day_of_week=serialize_days([day]),
             importance=importance.value,
@@ -101,9 +90,8 @@ class TemplateTaskService:
             detail=detail,
         )
         self._repository.add(split_task)
-        self._repository.commit()
-        self._repository.refresh(split_task)
-        return split_task
+        self._repository.flush()
+        return template_task_to_read(split_task)
 
     def delete_task_for_day(self, task_id: int, day: int, *, user_id: int) -> None:
         task = self._get_owned_task(task_id, user_id)
@@ -116,10 +104,12 @@ class TemplateTaskService:
             self._repository.delete(task)
         else:
             task.day_of_week = serialize_days(remaining_days)
-        self._repository.commit()
+        self._repository.flush()
 
     def _get_owned_task(self, task_id: int, user_id: int) -> ChecklistTemplateTask:
+        """La pertenencia sale de la columna, no de un join con la categoria:
+        un query menos y sin depender de que la categoria este bien asignada."""
         task = self._repository.get(task_id)
-        if task is None or not self._repository.category_belongs_to_user(task.category_id, user_id):
+        if task is None or task.user_id != user_id:
             raise TemplateTaskNotFoundError(task_id)
         return task

@@ -42,7 +42,9 @@ class ChecklistAnalyticsService:
         self._score_repository = score_repository
         self._category_repository = category_repository
 
-    def get_weekly(self, user_id: int, year: int) -> tuple[list[tuple[int | None, str]], list[dict]]:
+    def get_weekly(
+        self, user_id: int, year: int
+    ) -> tuple[list[tuple[int | None, str]], list[dict]]:
         weeks = self._week_repository.list_closed_by_year(user_id, year)
         rows = self._score_repository.list_by_week_ids([week.id for week in weeks])
 
@@ -60,13 +62,17 @@ class ChecklistAnalyticsService:
                 "first_day": week.first_day,
                 "last_day": week.last_day,
                 "total_score": week.score or 0,
-                "scores": self._project(plan, {cid: per_week_category.get((week.id, cid), 0) for cid in category_totals}),
+                "scores": self._project(
+                    plan, {cid: per_week_category.get((week.id, cid), 0) for cid in category_totals}
+                ),
             }
             for week in weeks
         ]
         return plan.order, points
 
-    def get_monthly(self, user_id: int, year: int) -> tuple[list[tuple[int | None, str]], list[dict]]:
+    def get_monthly(
+        self, user_id: int, year: int
+    ) -> tuple[list[tuple[int | None, str]], list[dict]]:
         weeks = self._week_repository.list_closed_overlapping_year(user_id, year)
         rows = self._score_repository.list_by_week_ids([week.id for week in weeks])
         weeks_by_id = {week.id: week for week in weeks}
@@ -93,7 +99,9 @@ class ChecklistAnalyticsService:
             {
                 "month": month,
                 "total_score": month_totals.get(month, 0),
-                "scores": self._project(plan, {cid: per_month_category.get((month, cid), 0) for cid in category_totals}),
+                "scores": self._project(
+                    plan, {cid: per_month_category.get((month, cid), 0) for cid in category_totals}
+                ),
             }
             for month in range(1, 13)
         ]
@@ -129,7 +137,8 @@ class ChecklistAnalyticsService:
             return (priority, category_id)
 
         order: list[tuple[int | None, str]] = [
-            (category_id, display_name(category_id)) for category_id in sorted(named_ids, key=sort_key)
+            (category_id, display_name(category_id))
+            for category_id in sorted(named_ids, key=sort_key)
         ]
         if others_ids:
             order.append((None, OTHERS_LABEL))

@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  # Linter y formato: fallan rapido y sin base de datos.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: ruff (lint)
+        run: ruff check .
+      - name: ruff (formato)
+        run: ruff format --check .
+
+  # Suite sobre SQLite en memoria: es la que corre en cada push, rapida.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  # Postgres real: es lo unico que atrapa las divergencias con SQLite, que en
+  # este proyecto ya mordieron dos veces (create_all que no altera columnas, y
+  # SAVEPOINT roto en pysqlite). Ademas verifica que las migraciones levanten
+  # el esquema desde cero y que ningun modelo haya quedado sin su migracion.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ulm_user
+          POSTGRES_PASSWORD: ulm_password
+          POSTGRES_DB: ulm_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://ulm_user:ulm_password@localhost:5432/ulm_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Migraciones desde cero
+        run: alembic upgrade head
+      - name: Sin drift entre modelos y esquema
+        run: alembic check
+      - name: Downgrade reversible
+        run: alembic downgrade base

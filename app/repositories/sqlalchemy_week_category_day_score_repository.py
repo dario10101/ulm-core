@@ -1,6 +1,6 @@
 """Implementacion del WeekCategoryDayScoreRepository sobre SQLAlchemy/Postgres."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

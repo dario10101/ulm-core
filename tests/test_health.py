@@ -1,6 +1,5 @@
 """Pruebas unitarias del endpoint de salud."""
 
-
 from tests.conftest import client
 
 

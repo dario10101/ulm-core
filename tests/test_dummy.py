@@ -4,7 +4,6 @@ Usa SQLite en memoria en vez de Postgres para no depender del contenedor Docker
 local durante las pruebas automatizadas.
 """
 
-
 from tests.conftest import client
 
 

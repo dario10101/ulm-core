@@ -1,6 +1,6 @@
 """Implementacion del TaskRepository sobre SQLAlchemy/Postgres."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,14 +42,11 @@ class SqlAlchemyTaskRepository:
     def get(self, task_id: int) -> ChecklistTask | None:
         return self._db.get(ChecklistTask, task_id)
 
+    def flush(self) -> None:
+        self._db.flush()
+
     def add(self, task: ChecklistTask) -> None:
         self._db.add(task)
 
     def delete(self, task: ChecklistTask) -> None:
         self._db.delete(task)
-
-    def commit(self) -> None:
-        self._db.commit()
-
-    def refresh(self, task: ChecklistTask) -> None:
-        self._db.refresh(task)

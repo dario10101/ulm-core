@@ -2,8 +2,8 @@
 generales (cld_events) y eventos personales (cld_user_events) y los expone
 como marcadores de inicio/fin dentro de un rango de fechas (vista semanal)."""
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Sequence
 
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_user_event_repository import CldUserEventRepository
@@ -44,7 +44,9 @@ class CalendarEventService:
                 )
             )
 
-        for user_event in self._cld_user_event_repository.list_in_range(user_id, first_day, last_day):
+        for user_event in self._cld_user_event_repository.list_in_range(
+            user_id, first_day, last_day
+        ):
             markers.extend(
                 self._markers_for(
                     id=user_event.id,
@@ -61,7 +63,9 @@ class CalendarEventService:
 
         return sorted(markers, key=lambda m: m.marker_date)
 
-    def list_ranges(self, user_id: int, first_day: date, last_day: date) -> list[CalendarEventRangeRead]:
+    def list_ranges(
+        self, user_id: int, first_day: date, last_day: date
+    ) -> list[CalendarEventRangeRead]:
         """Rangos completos (sin recortar) de los eventos que se solapan con
         [first_day, last_day]. A diferencia de list_markers, no proyecta a
         inicio/fin: sirve para pintar cada dia que un evento cubre (vista
@@ -88,7 +92,9 @@ class CalendarEventService:
                 first_day=user_event.first_day,
                 last_day=user_event.last_day,
             )
-            for user_event in self._cld_user_event_repository.list_in_range(user_id, first_day, last_day)
+            for user_event in self._cld_user_event_repository.list_in_range(
+                user_id, first_day, last_day
+            )
         )
         return sorted(ranges, key=lambda r: r.first_day)
 
@@ -109,12 +115,24 @@ class CalendarEventService:
 
         if event_first_day == event_last_day:
             if range_start <= event_first_day <= range_end:
-                return [CalendarEventMarkerRead(**base, marker_date=event_first_day, marker_type=MarkerType.SINGLE)]
+                return [
+                    CalendarEventMarkerRead(
+                        **base, marker_date=event_first_day, marker_type=MarkerType.SINGLE
+                    )
+                ]
             return []
 
         markers = []
         if range_start <= event_first_day <= range_end:
-            markers.append(CalendarEventMarkerRead(**base, marker_date=event_first_day, marker_type=MarkerType.START))
+            markers.append(
+                CalendarEventMarkerRead(
+                    **base, marker_date=event_first_day, marker_type=MarkerType.START
+                )
+            )
         if range_start <= event_last_day <= range_end:
-            markers.append(CalendarEventMarkerRead(**base, marker_date=event_last_day, marker_type=MarkerType.END))
+            markers.append(
+                CalendarEventMarkerRead(
+                    **base, marker_date=event_last_day, marker_type=MarkerType.END
+                )
+            )
         return markers

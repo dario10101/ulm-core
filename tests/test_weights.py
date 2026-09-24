@@ -3,9 +3,12 @@
 El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
+from datetime import date
+from decimal import Decimal
 
 from app.db.models import weight as weight_model  # noqa: F401
-
+from app.db.models.user import User
+from app.db.models.weight import WeightRecord
 from tests.conftest import client
 
 
@@ -28,9 +31,7 @@ def test_create_weight_missing_required_field_returns_422():
 
 
 def test_create_weight_requires_positive_value():
-    response = client.post(
-        "/api/v1/weights/", json={"weight_kg": 0, "recorded_on": "2026-08-01"}
-    )
+    response = client.post("/api/v1/weights/", json={"weight_kg": 0, "recorded_on": "2026-08-01"})
     assert response.status_code == 422
 
 
@@ -82,3 +83,47 @@ def test_update_and_delete_weight():
 
     delete_missing_response = client.delete(f"/api/v1/weights/{weight_id}")
     assert delete_missing_response.status_code == 404
+
+
+# --- Aislamiento por usuario: un registro ajeno no se puede tocar ni ver ---
+
+
+def _other_users_weight(db_session) -> int:
+    """Crea un usuario distinto al quemado y un registro de peso suyo."""
+    other = User(id=999, name="Otra persona", email="otra@example.com", timezone="America/Bogota")
+    db_session.add(other)
+    db_session.flush()
+    record = WeightRecord(user_id=other.id, weight_kg=Decimal("80.0"), recorded_on=date(2026, 8, 1))
+    db_session.add(record)
+    db_session.commit()
+    return record.id
+
+
+def test_update_of_another_users_weight_returns_404(db_session):
+    weight_id = _other_users_weight(db_session)
+
+    response = client.put(
+        f"/api/v1/weights/{weight_id}",
+        json={"weight_kg": 60.0, "recorded_on": "2026-08-01", "note": "ajeno"},
+    )
+
+    assert response.status_code == 404
+    # y el registro quedo intacto
+    assert db_session.get(WeightRecord, weight_id).weight_kg == Decimal("80.00")
+
+
+def test_delete_of_another_users_weight_returns_404(db_session):
+    weight_id = _other_users_weight(db_session)
+
+    response = client.delete(f"/api/v1/weights/{weight_id}")
+
+    assert response.status_code == 404
+    assert db_session.get(WeightRecord, weight_id) is not None
+
+
+def test_another_users_weight_is_not_listed(db_session):
+    _other_users_weight(db_session)
+
+    body = client.get("/api/v1/weights/").json()
+
+    assert body["total"] == 0

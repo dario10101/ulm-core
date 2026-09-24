@@ -1,6 +1,7 @@
 """Interfaz (Protocol) del acceso a datos de tareas de calendario (cld_tasks)."""
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from app.db.models.cld_task import CldTask
 
@@ -16,10 +17,12 @@ class CldTaskRepository(Protocol):
 
     def get(self, task_id: int) -> CldTask | None: ...
 
+    def flush(self) -> None:
+        """Manda los INSERT/UPDATE pendientes a la base sin cerrar la
+        transaccion. Sirve para obtener los ids autogenerados; el commit lo
+        hace `get_db` al final del request."""
+        ...
+
     def add(self, task: CldTask) -> None: ...
 
     def delete(self, task: CldTask) -> None: ...
-
-    def commit(self) -> None: ...
-
-    def refresh(self, task: CldTask) -> None: ...

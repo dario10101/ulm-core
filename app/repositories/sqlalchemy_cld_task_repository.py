@@ -1,6 +1,6 @@
 """Implementacion del CldTaskRepository sobre SQLAlchemy/Postgres."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -51,14 +51,11 @@ class SqlAlchemyCldTaskRepository:
     def get(self, task_id: int) -> CldTask | None:
         return self._db.get(CldTask, task_id)
 
+    def flush(self) -> None:
+        self._db.flush()
+
     def add(self, task: CldTask) -> None:
         self._db.add(task)
 
     def delete(self, task: CldTask) -> None:
         self._db.delete(task)
-
-    def commit(self) -> None:
-        self._db.commit()
-
-    def refresh(self, task: CldTask) -> None:
-        self._db.refresh(task)

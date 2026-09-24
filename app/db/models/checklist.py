@@ -1,7 +1,7 @@
 """Modelos ORM del modulo de checklists: categorias, template semanal, y las
 semanas/tareas concretas generadas a partir de ese template."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -39,6 +39,10 @@ class ChecklistTemplateTask(Base):
     __tablename__ = "cl_template_tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # Dueño explicito. Antes se derivaba por join con la categoria, lo que
+    # costaba un query extra en cada chequeo y dejaba el aislamiento entre
+    # usuarios dependiendo de que la categoria estuviera bien asignada.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     # Dias 1-7 separados por coma (ej. "1,2,4,5") cuando la tarea aplica a varios dias
     day_of_week: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -79,7 +83,7 @@ class ChecklistTask(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
     last_modified_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
 

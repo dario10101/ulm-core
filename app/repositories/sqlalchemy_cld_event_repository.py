@@ -1,7 +1,7 @@
 """Implementacion del CldEventRepository sobre SQLAlchemy/Postgres."""
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
