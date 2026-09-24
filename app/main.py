@@ -18,9 +18,8 @@ from app.api.routes import (
     weights,
 )
 from app.core.config import settings
-from app.db.base_class import Base
 from app.db.seed import ensure_default_user
-from app.db.session import SessionLocal, engine
+from app.db.session import SessionLocal
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
 from app.db.models import checklist as checklist_model  # noqa: F401
@@ -34,8 +33,10 @@ from app.db.models import weight as weight_model  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # El esquema ya no se crea aca: lo maneja Alembic (`alembic upgrade head`).
+    # create_all() solo creaba tablas faltantes, nunca alteraba las existentes,
+    # que era justo el problema. Ver ulm-repository/how-to/alembic.md.
     try:
-        Base.metadata.create_all(bind=engine)
         db: Session = SessionLocal()
         try:
             ensure_default_user(db)

@@ -2,20 +2,13 @@
 fechas, y sincronizacion opcional con el checklist semanal (sin tocar nunca
 el template).
 
-Usa SQLite en memoria (igual que test_checklists.py) para no depender de Postgres.
+El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.db.base_class import Base
-from app.db.seed import ensure_default_user
-from app.db.session import get_db
 from app.main import app
 from app.services.cld_task_sync import (
     compute_occurrence_in_range,
@@ -24,35 +17,9 @@ from app.services.cld_task_sync import (
     to_utc,
 )
 
-# Importar los modelos para que sus tablas queden registradas en Base.metadata
-from app.db.models import checklist as checklist_model  # noqa: F401
-from app.db.models import cld_task as cld_task_model  # noqa: F401
-from app.db.models import user as user_model  # noqa: F401
 
-test_engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-Base.metadata.create_all(bind=test_engine)
+from tests.conftest import client
 
-seed_db = TestSessionLocal()
-ensure_default_user(seed_db)
-seed_db.close()
-
-
-def override_get_db():
-    db = TestSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
 
 # Las semanas se validan contra hoy y contra la semana anterior (ver
 # WeekService.get_next_range), asi que las fechas de los tests de sync se

@@ -22,7 +22,9 @@ class CldTask(Base):
     scheduled_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Duracion en minutos desde la hora de inicio (scheduled_date/repeat_date).
     # Nunca cruza la medianoche del dia de inicio (se valida en el schema).
-    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    duration_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60"
+    )
     # WEEKLY, MONTHLY, YEARLY, o None si la tarea no se repite
     repeat_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Fecha/hora ancla de la recurrencia: se usa su dia de semana (WEEKLY), su

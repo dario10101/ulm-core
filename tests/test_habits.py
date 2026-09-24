@@ -1,10 +1,7 @@
 """Pruebas unitarias del modulo dummy de habitos."""
 
-from fastapi.testclient import TestClient
 
-from app.main import app
-
-client = TestClient(app)
+from tests.conftest import client
 
 
 def test_list_habits_returns_seed_data():

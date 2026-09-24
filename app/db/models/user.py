@@ -18,7 +18,9 @@ class User(Base):
     # Zona horaria IANA (ej. "America/Bogota"). Toda cuenta de calendario
     # (dia, dia de semana, dia del mes) se hace convirtiendo a esta zona
     # primero; la BD guarda siempre UTC. Ver app/services/cld_task_sync.py.
-    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="America/Bogota")
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="America/Bogota", server_default="America/Bogota"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

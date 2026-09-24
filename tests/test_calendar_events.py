@@ -2,52 +2,19 @@
 y eventos personales (cld_user_events), vistos como marcadores de
 inicio/fin/dia-unico dentro de un rango (vista semanal).
 
-Usa SQLite en memoria (igual que test_checklists.py) para no depender de Postgres.
+El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
 from datetime import date, timedelta
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.db.base_class import Base
 from app.db.models.cld_event import CldEvent
 from app.db.models.cld_user_event import CldUserEvent
-from app.db.seed import ensure_default_user
-from app.db.session import get_db
 from app.main import app
 
-# Importar los modelos para que sus tablas queden registradas en Base.metadata
-from app.db.models import checklist as checklist_model  # noqa: F401
-from app.db.models import cld_task as cld_task_model  # noqa: F401
-from app.db.models import user as user_model  # noqa: F401
 
-test_engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-Base.metadata.create_all(bind=test_engine)
+from tests.conftest import client
 
-seed_db = TestSessionLocal()
-ensure_default_user(seed_db)
-seed_db.close()
-
-
-def override_get_db():
-    db = TestSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
 
 TODAY = date.today()
 
@@ -63,26 +30,16 @@ def _make_category(name: str) -> int:
     return next(c["id"] for c in updated if c["name"] == name)
 
 
-def _insert(model, **kwargs) -> None:
-    """Inserta directo (no hay endpoint de escritura para cld_events /
-    cld_user_events todavia). Usa la sesion que este activa en
-    app.dependency_overrides[get_db] en este momento, no el engine propio de
-    este archivo: varios test_*.py de este proyecto comparten el mismo
-    dependency_overrides global, y el ultimo modulo importado por pytest es
-    el que termina quedando activo para todos. Escribir siempre contra la
-    sesion realmente activa evita que este insert quede en un engine que
-    el `client` de este archivo despues no lee."""
-    gen = app.dependency_overrides[get_db]()
-    db = next(gen)
-    try:
-        db.add(model(**kwargs))
-        db.commit()
-    finally:
-        gen.close()
+def _insert(db, model, **kwargs) -> None:
+    """Inserta directo: todavia no hay endpoint de escritura para cld_events
+    ni cld_user_events. `db` es la sesion del test (fixture db_session), que
+    es la misma que la app usa durante ese test."""
+    db.add(model(**kwargs))
+    db.commit()
 
 
-def test_single_day_event_gives_one_marker():
-    _insert(CldEvent, code="HOLIDAY", first_day=_d(500), last_day=_d(500), name="Test holiday", detail=None)
+def test_single_day_event_gives_one_marker(db_session):
+    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(500), last_day=_d(500), name="Test holiday", detail=None)
 
     response = client.get(f"/api/v1/calendar-events?first_day={_d(497)}&last_day={_d(503)}")
     assert response.status_code == 200
@@ -94,16 +51,17 @@ def test_single_day_event_gives_one_marker():
     assert matching[0]["code"] == "HOLIDAY"
 
 
-def test_holiday_outside_range_is_not_returned():
-    _insert(CldEvent, code="HOLIDAY", first_day=_d(510), last_day=_d(510), name="Far holiday", detail=None)
+def test_holiday_outside_range_is_not_returned(db_session):
+    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(510), last_day=_d(510), name="Far holiday", detail=None)
 
     response = client.get(f"/api/v1/calendar-events?first_day={_d(497)}&last_day={_d(503)}").json()
     assert all(m["name"] != "Far holiday" for m in response)
 
 
-def test_multi_day_user_event_gives_start_and_end_markers_when_both_in_range():
+def test_multi_day_user_event_gives_start_and_end_markers_when_both_in_range(db_session):
     category_id = _make_category("Events test category")
     _insert(
+        db_session,
         CldUserEvent,
         user_id=1,
         category_id=category_id,
@@ -123,9 +81,10 @@ def test_multi_day_user_event_gives_start_and_end_markers_when_both_in_range():
     assert all(m["source"] == "user_event" for m in matching)
 
 
-def test_multi_day_event_gives_only_the_boundary_that_falls_in_the_requested_range():
+def test_multi_day_event_gives_only_the_boundary_that_falls_in_the_requested_range(db_session):
     category_id = _make_category("Events partial overlap")
     _insert(
+        db_session,
         CldUserEvent,
         user_id=1,
         category_id=category_id,
@@ -153,10 +112,11 @@ def test_multi_day_event_gives_only_the_boundary_that_falls_in_the_requested_ran
     assert all(m["name"] != "Long trip" for m in middle_week)
 
 
-def test_ranges_endpoint_returns_the_full_span_not_just_boundaries():
-    _insert(CldEvent, code="HOLIDAY", first_day=_d(550), last_day=_d(550), name="Range test holiday", detail=None)
+def test_ranges_endpoint_returns_the_full_span_not_just_boundaries(db_session):
+    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(550), last_day=_d(550), name="Range test holiday", detail=None)
     category_id = _make_category("Ranges test category")
     _insert(
+        db_session,
         CldUserEvent,
         user_id=1,
         category_id=category_id,
@@ -181,8 +141,8 @@ def test_ranges_endpoint_returns_the_full_span_not_just_boundaries():
     assert conference["code"] == "TRAVEL"
 
 
-def test_ranges_endpoint_excludes_events_entirely_outside_the_range():
-    _insert(CldEvent, code="HOLIDAY", first_day=_d(570), last_day=_d(570), name="Out of range holiday", detail=None)
+def test_ranges_endpoint_excludes_events_entirely_outside_the_range(db_session):
+    _insert(db_session, CldEvent, code="HOLIDAY", first_day=_d(570), last_day=_d(570), name="Out of range holiday", detail=None)
 
     response = client.get(f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}").json()
     assert all(r["name"] != "Out of range holiday" for r in response)

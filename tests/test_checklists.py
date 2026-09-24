@@ -1,49 +1,17 @@
 """Pruebas de categorias y tareas de template de checklist.
 
-Usa SQLite en memoria (igual que test_weights.py) para no depender de Postgres.
+El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
 from datetime import date, timedelta
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.db.base_class import Base
 from app.db.models.checklist import ChecklistWeek, ChecklistWeekCategoryDayScore
-from app.db.seed import ensure_default_user
-from app.db.session import get_db
 from app.main import app
 
-# Importar los modelos para que sus tablas queden registradas en Base.metadata
-from app.db.models import checklist as checklist_model  # noqa: F401
-from app.db.models import user as user_model  # noqa: F401
 
-test_engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-Base.metadata.create_all(bind=test_engine)
+from tests.conftest import client
 
-seed_db = TestSessionLocal()
-ensure_default_user(seed_db)
-seed_db.close()
-
-
-def override_get_db():
-    db = TestSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
 
 # Las semanas se validan contra la fecha real de hoy (WeekService.get_next_range),
 # asi que los rangos de las pruebas se calculan relativos a ella en vez de
@@ -139,15 +107,6 @@ def test_replace_categories_rejects_unknown_id():
 
 
 # --- Template tasks ---
-
-
-def _direct_session():
-    """Sesion contra el engine que app.dependency_overrides[get_db] tiene
-    activo *ahora mismo* (no necesariamente el TestSessionLocal de este
-    archivo: pytest importa todos los tests antes de correrlos, y el ultimo
-    archivo importado es el que termina activo para toda la suite). Usar
-    TestSessionLocal directo aca escribiria en un engine que la app nunca lee."""
-    return next(app.dependency_overrides[get_db]())
 
 
 def _make_category(name: str) -> int:
@@ -341,6 +300,39 @@ def test_create_week_rejects_more_than_seven_days():
     assert response.status_code == 422
 
 
+def _open_week_with_template_tasks() -> tuple[int, int]:
+    """Categoria + template (Gym dias 1 y 3, Water dia 1) + semana abierta que
+    los copia. Devuelve (week_id, category_id).
+
+    Cada test que necesita una semana abierta arma sus propias precondiciones:
+    antes las heredaba del test anterior, lo que los volvia dependientes del
+    orden de ejecucion."""
+    category_id = _make_category("Weeks test")
+    client.post(
+        "/api/v1/checklists/template/tasks",
+        json={"name": "Gym", "importance": "HIGH", "category_id": category_id, "days": [1, 3]},
+    )
+    client.post(
+        "/api/v1/checklists/template/tasks",
+        json={"name": "Water", "importance": "STANDARD", "category_id": category_id, "days": [1]},
+    )
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": _d(0), "last_day": _d(6)}
+    ).json()
+    return week["id"], category_id
+
+
+def _create_and_close_week(first_day: str, last_day: str) -> int:
+    """Semana cerrada (todas sus tareas marcadas FAILED para poder cerrarla)."""
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": first_day, "last_day": last_day}
+    ).json()
+    for task in client.get(f"/api/v1/checklists/weeks/{week['id']}/tasks").json():
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": "FAILED"})
+    client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
+    return week["id"]
+
+
 def test_create_week_copies_template_tasks_split_by_day():
     category_id = _make_category("Weeks test")
     client.post(
@@ -387,6 +379,7 @@ def test_create_week_copies_template_tasks_split_by_day():
 
 
 def test_create_week_blocked_while_one_is_open():
+    _open_week_with_template_tasks()
     response = client.post(
         "/api/v1/checklists/weeks",
         json={"first_day": _d(7), "last_day": _d(13)},
@@ -395,8 +388,7 @@ def test_create_week_blocked_while_one_is_open():
 
 
 def test_close_week_blocked_while_tasks_are_pending():
-    current = client.get("/api/v1/checklists/weeks/current").json()
-    week_id = current["id"]
+    week_id, _ = _open_week_with_template_tasks()
     tasks = client.get(f"/api/v1/checklists/weeks/{week_id}/tasks").json()
     assert any(t["status"] == "PENDING" for t in tasks)
 
@@ -405,8 +397,7 @@ def test_close_week_blocked_while_tasks_are_pending():
 
 
 def test_update_status_and_close_week_computes_score():
-    current = client.get("/api/v1/checklists/weeks/current").json()
-    week_id = current["id"]
+    week_id, _ = _open_week_with_template_tasks()
     tasks = client.get(f"/api/v1/checklists/weeks/{week_id}/tasks").json()
 
     gym_day1 = next(t for t in tasks if t["name"] == "Gym" and t["day_of_week"] == 1)
@@ -565,6 +556,7 @@ def test_create_week_shorter_than_seven_days_is_allowed():
 
 
 def test_next_range_reflects_the_previous_week():
+    _create_and_close_week(_d(42), _d(44))
     response = client.get("/api/v1/checklists/weeks/next-range")
     assert response.status_code == 200
     body = response.json()
@@ -573,6 +565,7 @@ def test_next_range_reflects_the_previous_week():
 
 
 def test_create_week_rejects_start_before_previous_week_end():
+    _create_and_close_week(_d(42), _d(44))
     response = client.post(
         "/api/v1/checklists/weeks",
         json={"first_day": _d(44), "last_day": _d(50)},
@@ -892,7 +885,7 @@ def test_close_week_populates_category_day_scores():
     assert sum(point["scores"]) == 2
 
 
-def test_disabled_category_keeps_its_history_in_analytics():
+def test_disabled_category_keeps_its_history_in_analytics(db_session):
     """Una categoria deshabilitada desaparece de /categories pero su
     historia sigue viva en analytics. Usa un anio sintetico propio (via
     insercion directa) para no depender de ganarle el ranking de puntaje a
@@ -900,26 +893,22 @@ def test_disabled_category_keeps_its_history_in_analytics():
     category_id = _make_category("History after disable")
     year = 2016
 
-    db = _direct_session()
-    try:
-        week = ChecklistWeek(
-            user_id=1,
-            first_day=date(year, 1, 1),
-            last_day=date(year, 1, 7),
-            closed=True,
-            closed_date=None,
-            score=7,
+    week = ChecklistWeek(
+        user_id=1,
+        first_day=date(year, 1, 1),
+        last_day=date(year, 1, 7),
+        closed=True,
+        closed_date=None,
+        score=7,
+    )
+    db_session.add(week)
+    db_session.flush()
+    db_session.add(
+        ChecklistWeekCategoryDayScore(
+            cl_week_id=week.id, category_id=category_id, day_of_week=1, score=7, points_possible=7
         )
-        db.add(week)
-        db.flush()
-        db.add(
-            ChecklistWeekCategoryDayScore(
-                cl_week_id=week.id, category_id=category_id, day_of_week=1, score=7, points_possible=7
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
+    )
+    db_session.commit()
 
     # Deshabilitar (hoy es lo que hace "eliminar" una categoria desde el PUT
     # de reemplazo): desaparece de la lista de categorias activas.
@@ -965,7 +954,7 @@ def test_disabled_category_cannot_be_assigned_to_new_work():
     client.post(f"/api/v1/checklists/weeks/{week['id']}/close")
 
 
-def test_monthly_analytics_splits_a_week_that_crosses_month_boundary():
+def test_monthly_analytics_splits_a_week_that_crosses_month_boundary(db_session):
     """Semana sintetica Jan29-Feb4/2015 (fuera de rango de cualquier otro
     test): cada dia debe caer en el mes calendario que le corresponde de
     verdad, no todo en el mes de first_day."""
@@ -973,32 +962,28 @@ def test_monthly_analytics_splits_a_week_that_crosses_month_boundary():
     first_day = date(2015, 1, 29)
     daily_scores = [10, 5, 5, 5, 5, 0, 5]  # offsets 0..6 -> Jan29..Feb4
 
-    db = _direct_session()
-    try:
-        week = ChecklistWeek(
-            user_id=1,
-            first_day=first_day,
-            last_day=first_day + timedelta(days=6),
-            closed=True,
-            closed_date=None,
-            score=sum(daily_scores),
-        )
-        db.add(week)
-        db.flush()
-        for offset, score in enumerate(daily_scores):
-            actual_date = first_day + timedelta(days=offset)
-            db.add(
-                ChecklistWeekCategoryDayScore(
-                    cl_week_id=week.id,
-                    category_id=category_id,
-                    day_of_week=actual_date.isoweekday(),
-                    score=score,
-                    points_possible=score,
-                )
+    week = ChecklistWeek(
+        user_id=1,
+        first_day=first_day,
+        last_day=first_day + timedelta(days=6),
+        closed=True,
+        closed_date=None,
+        score=sum(daily_scores),
+    )
+    db_session.add(week)
+    db_session.flush()
+    for offset, score in enumerate(daily_scores):
+        actual_date = first_day + timedelta(days=offset)
+        db_session.add(
+            ChecklistWeekCategoryDayScore(
+                cl_week_id=week.id,
+                category_id=category_id,
+                day_of_week=actual_date.isoweekday(),
+                score=score,
+                points_possible=score,
             )
-        db.commit()
-    finally:
-        db.close()
+        )
+    db_session.commit()
 
     expected_jan = sum(
         score for offset, score in enumerate(daily_scores) if (first_day + timedelta(days=offset)).month == 1
@@ -1016,35 +1001,31 @@ def test_monthly_analytics_splits_a_week_that_crosses_month_boundary():
     assert february["scores"][index] == expected_feb
 
 
-def test_weekly_analytics_groups_low_scoring_categories_into_others():
+def test_weekly_analytics_groups_low_scoring_categories_into_others(db_session):
     category_ids = [_make_category(f"Bucket {i}") for i in range(9)]
     scores = [100, 90, 80, 70, 60, 50, 40, 30, 20]  # las 2 ultimas van a "Others"
 
-    db = _direct_session()
-    try:
-        week = ChecklistWeek(
-            user_id=1,
-            first_day=date(2014, 1, 1),
-            last_day=date(2014, 1, 7),
-            closed=True,
-            closed_date=None,
-            score=sum(scores),
-        )
-        db.add(week)
-        db.flush()
-        for category_id, score in zip(category_ids, scores):
-            db.add(
-                ChecklistWeekCategoryDayScore(
-                    cl_week_id=week.id,
-                    category_id=category_id,
-                    day_of_week=1,
-                    score=score,
-                    points_possible=score,
-                )
+    week = ChecklistWeek(
+        user_id=1,
+        first_day=date(2014, 1, 1),
+        last_day=date(2014, 1, 7),
+        closed=True,
+        closed_date=None,
+        score=sum(scores),
+    )
+    db_session.add(week)
+    db_session.flush()
+    for category_id, score in zip(category_ids, scores):
+        db_session.add(
+            ChecklistWeekCategoryDayScore(
+                cl_week_id=week.id,
+                category_id=category_id,
+                day_of_week=1,
+                score=score,
+                points_possible=score,
             )
-        db.commit()
-    finally:
-        db.close()
+        )
+    db_session.commit()
 
     body = client.get("/api/v1/checklists/analytics/weekly", params={"year": 2014}).json()
     assert len(body["categories"]) == 8
@@ -1072,6 +1053,7 @@ def _disable_category(category_id: int) -> None:
 
 
 def test_disabled_category_can_be_re_enabled():
+    _make_category("Se queda habilitada")  # referencia para comparar prioridades
     category_id = _make_category("Re-enable me")
     _disable_category(category_id)
     assert category_id not in {c["id"] for c in client.get("/api/v1/checklists/categories").json()}

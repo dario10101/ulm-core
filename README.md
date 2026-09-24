@@ -50,6 +50,19 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 
 Coleccion de Postman lista para importar: [doc/ulm-core.postman_collection.json](./doc/ulm-core.postman_collection.json).
 
+## Migraciones de base de datos
+
+El esquema lo maneja **Alembic**, no `create_all()` (que solo creaba tablas faltantes y nunca alteraba las existentes). La app ya no toca el esquema al arrancar.
+
+```bash
+alembic current                                   # en que revision esta la BD
+alembic upgrade head                              # aplicar lo pendiente
+alembic revision --autogenerate -m "descripcion"  # crear una migracion...
+alembic check                                     # ...o verificar que no hay drift
+```
+
+Despues de cambiar un modelo: generar la migracion, **abrir el archivo y revisarlo** (autogenerate no detecta renombres: los genera como drop + add, con perdida de datos), y aplicarla. Fundamentos y trampas: [../ulm-repository/how-to/alembic.md](../ulm-repository/how-to/alembic.md).
+
 ## Zona horaria
 
 La base guarda **siempre UTC** (`timestamptz`); la zona de cada usuario vive en `users.timezone` como nombre IANA (ej. `America/Bogota`, no un offset `-5`: en zonas con horario de verano el offset correcto depende de la fecha).

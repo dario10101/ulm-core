@@ -30,7 +30,9 @@ class ChecklistCategory(Base):
     # ENABLED o DISABLED (ver app.schemas.checklist.CategoryStatus). Eliminar una
     # categoria es un soft-delete: nunca se borra la fila, para no perder la
     # referencia historica desde cl_tasks/cl_week_category_day_score.
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ENABLED")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ENABLED", server_default="ENABLED"
+    )
 
 
 class ChecklistTemplateTask(Base):

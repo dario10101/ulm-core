@@ -1,46 +1,12 @@
 """Pruebas unitarias de los endpoints de registros de peso.
 
-Usa SQLite en memoria (igual que test_dummy.py) para no depender de Postgres.
+El engine, el cliente y el aislamiento por test viven en conftest.py.
 """
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.db.base_class import Base
-from app.db.seed import ensure_default_user
-from app.db.session import get_db
-from app.main import app
-
-# Importar los modelos para que sus tablas queden registradas en Base.metadata
 from app.db.models import weight as weight_model  # noqa: F401
-from app.db.models import user as user_model  # noqa: F401
 
-test_engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-Base.metadata.create_all(bind=test_engine)
-
-seed_db = TestSessionLocal()
-ensure_default_user(seed_db)
-seed_db.close()
-
-
-def override_get_db():
-    db = TestSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
+from tests.conftest import client
 
 
 def test_create_weight():
@@ -78,7 +44,7 @@ def test_list_weights_is_paginated_and_filters_by_date_range():
     assert page_body["page"] == 1
     assert page_body["page_size"] == 2
     assert len(page_body["items"]) == 2
-    assert page_body["total"] >= 4
+    assert page_body["total"] == 3
 
     filtered_response = client.get(
         "/api/v1/weights/",
