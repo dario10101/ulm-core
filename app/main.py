@@ -14,8 +14,10 @@ from app.api.routes import (
     checklists,
     cld_tasks,
     dummy,
+    expenses,
     habits,
     health,
+    meals,
     weights,
 )
 from app.core.config import settings
@@ -27,6 +29,8 @@ from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
 from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
 from app.db.models import dummy as dummy_model  # noqa: F401
+from app.db.models import finance as finance_model  # noqa: F401
+from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
 from app.db.seed import ensure_default_user
@@ -81,6 +85,8 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(habits.router, prefix=settings.api_prefix)
 app.include_router(dummy.router, prefix=settings.api_prefix)
 app.include_router(weights.router, prefix=settings.api_prefix)
+app.include_router(meals.router, prefix=settings.api_prefix)
+app.include_router(expenses.router, prefix=settings.api_prefix)
 app.include_router(checklists.router, prefix=settings.api_prefix)
 app.include_router(cld_tasks.router, prefix=settings.api_prefix)
 app.include_router(calendar_events.router, prefix=settings.api_prefix)

@@ -20,6 +20,8 @@ from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
 from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
 from app.db.models import dummy as dummy_model  # noqa: F401
+from app.db.models import finance as finance_model  # noqa: F401
+from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
 

@@ -20,12 +20,20 @@ from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
 from app.repositories.cld_user_event_repository import CldUserEventRepository
+from app.repositories.expense_repository import ExpenseRepository
+from app.repositories.finance_catalog_repository import FinanceCatalogRepository
+from app.repositories.meal_repository import MealRepository
 from app.repositories.sqlalchemy_category_repository import SqlAlchemyCategoryRepository
 from app.repositories.sqlalchemy_cld_event_repository import SqlAlchemyCldEventRepository
 from app.repositories.sqlalchemy_cld_task_repository import SqlAlchemyCldTaskRepository
 from app.repositories.sqlalchemy_cld_user_event_repository import (
     SqlAlchemyCldUserEventRepository,
 )
+from app.repositories.sqlalchemy_expense_repository import SqlAlchemyExpenseRepository
+from app.repositories.sqlalchemy_finance_catalog_repository import (
+    SqlAlchemyFinanceCatalogRepository,
+)
+from app.repositories.sqlalchemy_meal_repository import SqlAlchemyMealRepository
 from app.repositories.sqlalchemy_task_repository import SqlAlchemyTaskRepository
 from app.repositories.sqlalchemy_template_task_repository import (
     SqlAlchemyTemplateTaskRepository,
@@ -45,6 +53,9 @@ from app.services.category_service import CategoryService
 from app.services.checklist_analytics_service import ChecklistAnalyticsService
 from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
+from app.services.expense_service import ExpenseService
+from app.services.finance_catalog_service import FinanceCatalogService
+from app.services.meal_service import MealService
 from app.services.template_task_service import TemplateTaskService
 from app.services.week_service import WeekService
 from app.services.weight_service import WeightService
@@ -74,6 +85,37 @@ def get_weight_service(
     repository: WeightRepository = Depends(get_weight_repository),
 ) -> WeightService:
     return WeightService(repository)
+
+
+def get_meal_repository(db: Session = Depends(get_db)) -> MealRepository:
+    return SqlAlchemyMealRepository(db)
+
+
+def get_meal_service(
+    repository: MealRepository = Depends(get_meal_repository),
+) -> MealService:
+    return MealService(repository)
+
+
+def get_finance_catalog_repository(db: Session = Depends(get_db)) -> FinanceCatalogRepository:
+    return SqlAlchemyFinanceCatalogRepository(db)
+
+
+def get_finance_catalog_service(
+    repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
+) -> FinanceCatalogService:
+    return FinanceCatalogService(repository)
+
+
+def get_expense_repository(db: Session = Depends(get_db)) -> ExpenseRepository:
+    return SqlAlchemyExpenseRepository(db)
+
+
+def get_expense_service(
+    expense_repository: ExpenseRepository = Depends(get_expense_repository),
+    catalog_repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
+) -> ExpenseService:
+    return ExpenseService(expense_repository, catalog_repository)
 
 
 def get_category_repository(db: Session = Depends(get_db)) -> CategoryRepository:

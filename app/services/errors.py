@@ -125,3 +125,37 @@ class InvalidTaskDateError(ValidationError):
 
 class WeightNotFoundError(NotFoundError):
     """El registro de peso no existe (o no es del usuario)."""
+
+
+# --- Registros de comida ---
+
+
+class MealNotFoundError(NotFoundError):
+    """El registro de comida no existe (o no es del usuario)."""
+
+
+# --- Finanzas: gastos ---
+
+
+class ExpenseCategoryNotFoundError(NotFoundError):
+    """La categoria de gasto referenciada no existe (o esta deshabilitada)."""
+
+    def __init__(self, category_id: int) -> None:
+        self.category_id = category_id
+        super().__init__(f"Categoria de gasto inexistente: {category_id}")
+
+
+class PaymentMethodNotFoundError(NotFoundError):
+    """El metodo de pago referenciado no existe (o esta deshabilitado)."""
+
+    def __init__(self, payment_method_id: int) -> None:
+        self.payment_method_id = payment_method_id
+        super().__init__(f"Metodo de pago inexistente: {payment_method_id}")
+
+
+class TagNotFoundError(NotFoundError):
+    """Uno o mas tags referenciados no existen (o no son del usuario)."""
+
+    def __init__(self, tag_ids: set[int]) -> None:
+        self.tag_ids = tag_ids
+        super().__init__(f"Tags inexistentes: {sorted(self.tag_ids)}")

@@ -8,6 +8,7 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 
 - **Habitos**: endpoint dummy en memoria (pendiente de persistencia real).
 - **Peso corporal**: CRUD completo con paginacion y filtro por rango de fechas.
+- **Comidas** (`meals`): CRUD completo con paginacion y filtro por rango de fechas. `recorded_on` es fecha+hora (mismo contrato de hora de pared que `cld_tasks`). Los componentes del plato no se normalizan a una tabla aparte: se guardan en `meal_content` como texto plano `"NOMBRE:PORCENTAJE;NOMBRE:PORCENTAJE"` (mayusculas, sin tildes/caracteres especiales, orden alfabetico — ver `app/services/meal_content.py`). Se requiere al menos un componente o una bebida.
 - **Checklist**: modulo completo — categorias (CRUD + reordenar por prioridad), template semanal fijo por dia/categoria, generacion/seguimiento de la semana en curso (tareas con estado pendiente/completada/no lograda, puntaje y cierre de semana), alta de tareas circunstanciales directo en la semana sin modificar el template, y un campo `detail` (descripcion libre opcional) tanto en tareas de template como de semana.
 - **Tareas de calendario** (`cld_tasks`): tareas puntuales o recurrentes (semanal/mensual/anual, con ancla de fecha+hora y clamp al ultimo dia del mes cuando aplica) creadas desde "Add record". Tienen una duracion (`duration_minutes`, default 60) que nunca puede cruzar la medianoche del dia de inicio (validado tanto al crear como al editar). Opcionalmente se sincronizan con el checklist semanal (semana actual al crearse, y semanas futuras al crearse cada una) sin modificar nunca el template. Se pueden consultar por dia o por rango de fechas (vistas diaria/semanal del calendario), editar, y borrar una ocurrencia puntual o la serie completa (`excluded_dates`).
 - **Eventos de calendario**: `cld_events` (festivos y eventos generales, no ligados a un usuario; por ahora los 19 festivos de Colombia 2026) y `cld_user_events` (rangos personales del usuario, ej. vacaciones/viajes; sin CRUD en el front todavia). Ambas tablas tienen un campo `code` (ej. `HOLIDAY`, `SPECIAL_DATE` en `cld_events`; `TRAVEL`, `VACATION`, `BIRTHDAY` en `cld_user_events`) que la vista anual del front usa para filtrar por tipo de evento. La vista semanal los consulta como marcadores de inicio/fin (o dia unico si `first_day == last_day`, caso de los festivos); las vistas mensual y anual consultan ademas el rango completo (sin recortar), para pintar cada dia que un evento cubre.
@@ -24,6 +25,10 @@ Este repositorio expone la API REST que consume `ulm-web`. Estado actual:
 | `/api/v1/weights/` | GET | Lista registros de peso, paginado y con filtro opcional de rango de fechas (`start_date`, `end_date`) |
 | `/api/v1/weights/{id}` | PUT | Reemplaza un registro de peso |
 | `/api/v1/weights/{id}` | DELETE | Elimina un registro de peso |
+| `/api/v1/meals/` | POST | Crea un registro de comida (tipo, hora, tamano de porcion, componentes del plato, bebida y nota) |
+| `/api/v1/meals/` | GET | Lista registros de comida, paginado y con filtro opcional de rango de fechas (`start_date`, `end_date`) |
+| `/api/v1/meals/{id}` | PUT | Reemplaza un registro de comida |
+| `/api/v1/meals/{id}` | DELETE | Elimina un registro de comida |
 | `/api/v1/checklists/categories` | GET | Lista las categorias del checklist, ordenadas por prioridad |
 | `/api/v1/checklists/categories` | PUT | Guardado en bloque: crea, renombra, reordena y elimina categorias en una sola operacion |
 | `/api/v1/checklists/template/tasks` | GET | Lista las tareas del template semanal (con los dias a los que aplica cada una) |

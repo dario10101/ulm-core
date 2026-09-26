@@ -17,6 +17,8 @@ from app.db.models.checklist import (
     ChecklistWeek,
 )
 from app.db.models.cld_task import CldTask
+from app.db.models.finance import Expense
+from app.db.models.meal import Meal
 from app.db.models.weight import WeightRecord
 from app.schemas.checklist import (
     POINTS_BY_IMPORTANCE,
@@ -28,6 +30,9 @@ from app.schemas.checklist import (
     WeekRead,
 )
 from app.schemas.cld_task import CldTaskOccurrenceRead, CldTaskRead, RepeatMode
+from app.schemas.finance import CategoryRead as FinanceCategoryRead
+from app.schemas.finance import ExpenseRead, PaymentMethodRead, TagRead
+from app.schemas.meal import MealRead, MealType
 from app.schemas.weight import WeightRead
 from app.services.cld_task_sync import Occurrence, to_local
 from app.services.day_utils import parse_days
@@ -111,3 +116,39 @@ def cld_task_occurrence_to_read(
 
 def weight_to_read(record: WeightRecord) -> WeightRead:
     return WeightRead.model_validate(record, from_attributes=True)
+
+
+def expense_to_read(expense: Expense) -> ExpenseRead:
+    """`category`/`payment_method`/`tags` ya vienen resueltos (relationship
+    con lazy="joined"/"selectin", ver app/db/models/finance.py), asi que
+    "View records" no tiene que cruzar los catalogos por id."""
+    return ExpenseRead(
+        id=expense.id,
+        user_id=expense.user_id,
+        name=expense.name,
+        amount=float(expense.amount),
+        recorded_on=expense.recorded_on,
+        note=expense.note,
+        category=FinanceCategoryRead.model_validate(expense.category),
+        payment_method=PaymentMethodRead.model_validate(expense.payment_method),
+        tags=[TagRead.model_validate(tag) for tag in expense.tags],
+        created_at=expense.created_at,
+        updated_at=expense.updated_at,
+    )
+
+
+def meal_to_read(meal: Meal, tz: ZoneInfo) -> MealRead:
+    """`recorded_on` sale en hora de pared del usuario, igual que entra (ver
+    cld_task_to_read para el mismo contrato)."""
+    return MealRead(
+        id=meal.id,
+        user_id=meal.user_id,
+        recorded_on=to_local(meal.recorded_on, tz),
+        meal_type=MealType(meal.meal_type),
+        meal_size=meal.meal_size,
+        meal_content=meal.meal_content,
+        drink=meal.drink,
+        note=meal.note,
+        created_at=meal.created_at,
+        updated_at=meal.updated_at,
+    )
