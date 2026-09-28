@@ -137,6 +137,10 @@ class MealNotFoundError(NotFoundError):
 # --- Finanzas: gastos ---
 
 
+class ExpenseNotFoundError(NotFoundError):
+    """El registro de gasto no existe (o no es del usuario)."""
+
+
 class ExpenseCategoryNotFoundError(NotFoundError):
     """La categoria de gasto referenciada no existe (o esta deshabilitada)."""
 

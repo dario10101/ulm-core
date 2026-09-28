@@ -59,6 +59,10 @@ class ExpenseCreate(BaseModel):
     tag_ids: list[int] = Field(default_factory=list)
 
 
+class ExpenseUpdate(ExpenseCreate):
+    """Mismos campos que la creacion: es un reemplazo completo del registro."""
+
+
 class ExpenseRead(BaseModel):
     id: int
     user_id: int
@@ -79,3 +83,31 @@ class ExpensePage(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class ExpenseSummaryGroupBy(str, Enum):
+    CATEGORY = "category"
+    TAG = "tag"
+    PAYMENT_METHOD = "payment_method"
+    MONTH = "month"
+    YEAR = "year"
+
+
+class ExpenseSummaryBucket(BaseModel):
+    key: str
+    label: str
+    icon_key: str | None
+    color_key: str | None
+    total: float
+    count: int
+
+
+class ExpenseSummaryRead(BaseModel):
+    """Agregado para "Finance analysis". `total`/`count` son del conjunto
+    filtrado completo; con group_by=tag la suma de los buckets puede superarlo
+    (un gasto con varios tags aparece en cada uno)."""
+
+    group_by: ExpenseSummaryGroupBy
+    total: float
+    count: int
+    buckets: list[ExpenseSummaryBucket]

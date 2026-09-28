@@ -173,6 +173,181 @@ def test_list_expenses_is_paginated_and_filters_by_date_range(db_session):
     )
 
 
+def test_update_and_delete_expense(db_session):
+    category_id, payment_method_id, tag_id = _seed_catalog(db_session)
+    other_category = Category(name="Fuel", icon_key="fuel", color_key="orange")
+    db_session.add(other_category)
+    db_session.commit()
+
+    create_response = client.post(
+        "/api/v1/expenses/",
+        json={
+            "name": "Mercado",
+            "amount": 25000,
+            "recorded_on": "2026-09-01",
+            "payment_method_id": payment_method_id,
+            "category_id": category_id,
+            "tag_ids": [tag_id],
+        },
+    )
+    expense_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={
+            "name": "Gasolina",
+            "amount": 40000,
+            "recorded_on": "2026-09-02",
+            "note": "ajustado",
+            "payment_method_id": payment_method_id,
+            "category_id": other_category.id,
+            "tag_ids": [],
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["name"] == "Gasolina"
+    assert updated["amount"] == 40000
+    assert updated["category"]["id"] == other_category.id
+    assert updated["note"] == "ajustado"
+    assert updated["tags"] == []
+
+    delete_response = client.delete(f"/api/v1/expenses/{expense_id}")
+    assert delete_response.status_code == 204
+
+    update_missing_response = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={
+            "name": "Gasolina",
+            "amount": 1000,
+            "recorded_on": "2026-09-03",
+            "payment_method_id": payment_method_id,
+            "category_id": category_id,
+        },
+    )
+    assert update_missing_response.status_code == 404
+
+    delete_missing_response = client.delete(f"/api/v1/expenses/{expense_id}")
+    assert delete_missing_response.status_code == 404
+
+
+def test_update_of_another_users_expense_returns_404(db_session):
+    category_id, payment_method_id, _tag_id = _seed_catalog(db_session)
+    other = User(id=999, name="Otra persona", email="otra@example.com", timezone="America/Bogota")
+    db_session.add(other)
+    db_session.flush()
+
+    other_expense = Expense(
+        user_id=other.id,
+        name="Ajeno",
+        amount=5000,
+        recorded_on=date(2026, 8, 1),
+        payment_method_id=payment_method_id,
+        category_id=category_id,
+    )
+    db_session.add(other_expense)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/v1/expenses/{other_expense.id}",
+        json={
+            "name": "Ajeno editado",
+            "amount": 1,
+            "recorded_on": "2026-08-01",
+            "payment_method_id": payment_method_id,
+            "category_id": category_id,
+        },
+    )
+
+    assert response.status_code == 404
+    assert db_session.get(Expense, other_expense.id).name == "Ajeno"
+
+
+def test_delete_of_another_users_expense_returns_404(db_session):
+    category_id, payment_method_id, _tag_id = _seed_catalog(db_session)
+    other = User(id=999, name="Otra persona", email="otra@example.com", timezone="America/Bogota")
+    db_session.add(other)
+    db_session.flush()
+
+    other_expense = Expense(
+        user_id=other.id,
+        name="Ajeno",
+        amount=5000,
+        recorded_on=date(2026, 8, 1),
+        payment_method_id=payment_method_id,
+        category_id=category_id,
+    )
+    db_session.add(other_expense)
+    db_session.commit()
+
+    response = client.delete(f"/api/v1/expenses/{other_expense.id}")
+
+    assert response.status_code == 404
+    assert db_session.get(Expense, other_expense.id) is not None
+
+
+def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(db_session):
+    category_id, payment_method_id, tag_id = _seed_catalog(db_session)
+    other_category = Category(name="Fuel", icon_key="fuel", color_key="orange")
+    other_payment_method = PaymentMethod(name="PSE", icon_key="landmark", color_key="indigo")
+    other_tag = Tag(user_id=1, name="WANTED", color_key="amber")
+    db_session.add_all([other_category, other_payment_method, other_tag])
+    db_session.commit()
+
+    # Coincide con todos los filtros que se van a probar.
+    client.post(
+        "/api/v1/expenses/",
+        json={
+            "name": "Mercado",
+            "amount": 25000,
+            "recorded_on": "2026-09-01",
+            "payment_method_id": payment_method_id,
+            "category_id": category_id,
+            "tag_ids": [tag_id],
+        },
+    )
+    # No coincide con ninguno (otra categoria, otro metodo, otro tag, otro monto).
+    client.post(
+        "/api/v1/expenses/",
+        json={
+            "name": "Gasolina",
+            "amount": 90000,
+            "recorded_on": "2026-09-02",
+            "payment_method_id": other_payment_method.id,
+            "category_id": other_category.id,
+            "tag_ids": [other_tag.id],
+        },
+    )
+
+    by_category = client.get("/api/v1/expenses/", params={"category_id": category_id}).json()
+    assert [item["name"] for item in by_category["items"]] == ["Mercado"]
+
+    by_payment_method = client.get(
+        "/api/v1/expenses/", params={"payment_method_id": payment_method_id}
+    ).json()
+    assert [item["name"] for item in by_payment_method["items"]] == ["Mercado"]
+
+    by_tag = client.get("/api/v1/expenses/", params={"tag_ids": [tag_id]}).json()
+    assert [item["name"] for item in by_tag["items"]] == ["Mercado"]
+
+    by_amount_range = client.get(
+        "/api/v1/expenses/", params={"min_amount": 10000, "max_amount": 30000}
+    ).json()
+    assert [item["name"] for item in by_amount_range["items"]] == ["Mercado"]
+
+    combined = client.get(
+        "/api/v1/expenses/",
+        params={"category_id": category_id, "payment_method_id": payment_method_id},
+    ).json()
+    assert combined["total"] == 1
+
+    matches_neither = client.get(
+        "/api/v1/expenses/",
+        params={"category_id": category_id, "payment_method_id": other_payment_method.id},
+    ).json()
+    assert matches_neither["total"] == 0
+
+
 def test_another_users_expense_is_not_listed(db_session):
     category_id, payment_method_id, _tag_id = _seed_catalog(db_session)
     other = User(id=999, name="Otra persona", email="otra@example.com", timezone="America/Bogota")
@@ -193,3 +368,69 @@ def test_another_users_expense_is_not_listed(db_session):
     body = client.get("/api/v1/expenses/").json()
 
     assert body["total"] == 0
+
+
+def test_summarize_expenses_groups_by_each_dimension(db_session):
+    category_id, payment_method_id, tag_id = _seed_catalog(db_session)
+    other_category = Category(name="Transport", icon_key="bus", color_key="sky")
+    db_session.add(other_category)
+    db_session.commit()
+
+    def create(amount, recorded_on, *, category, tag_ids):
+        response = client.post(
+            "/api/v1/expenses/",
+            json={
+                "name": "Gasto",
+                "amount": amount,
+                "recorded_on": recorded_on,
+                "payment_method_id": payment_method_id,
+                "category_id": category,
+                "tag_ids": tag_ids,
+            },
+        )
+        assert response.status_code == 201
+
+    create(10000, "2025-12-31", category=category_id, tag_ids=[tag_id])
+    create(20000, "2026-01-15", category=category_id, tag_ids=[])
+    create(5000, "2026-01-20", category=other_category.id, tag_ids=[tag_id])
+
+    def summary(group_by, **params):
+        response = client.get("/api/v1/expenses/summary", params={"group_by": group_by, **params})
+        assert response.status_code == 200
+        return response.json()
+
+    by_category = summary("category")
+    assert by_category["total"] == 35000
+    assert by_category["count"] == 3
+    assert [(b["label"], b["total"], b["count"]) for b in by_category["buckets"]] == [
+        ("Groceries", 30000, 2),
+        ("Transport", 5000, 1),
+    ]
+    assert by_category["buckets"][0]["color_key"] == "lime"
+
+    by_tag = summary("tag")
+    assert {b["key"]: b["total"] for b in by_tag["buckets"]} == {str(tag_id): 15000, "none": 20000}
+
+    by_method = summary("payment_method")
+    assert [(b["key"], b["total"]) for b in by_method["buckets"]] == [
+        (str(payment_method_id), 35000)
+    ]
+
+    by_month = summary("month")
+    assert [(b["key"], b["total"]) for b in by_month["buckets"]] == [
+        ("2025-12", 10000),
+        ("2026-01", 25000),
+    ]
+
+    by_year = summary("year")
+    assert [(b["key"], b["count"]) for b in by_year["buckets"]] == [("2025", 1), ("2026", 2)]
+
+    # Los filtros son los mismos del listado.
+    filtered = summary("category", start_date="2026-01-01", category_id=category_id)
+    assert filtered["total"] == 20000
+    assert [b["label"] for b in filtered["buckets"]] == ["Groceries"]
+
+
+def test_summarize_expenses_rejects_unknown_group_by():
+    response = client.get("/api/v1/expenses/summary", params={"group_by": "weekday"})
+    assert response.status_code == 422
