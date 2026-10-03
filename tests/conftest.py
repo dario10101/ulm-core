@@ -10,6 +10,10 @@ Ahora hay un unico engine y una fixture autouse que le da a cada test su
 propia transaccion, que se revierte al terminar. Cada test arranca con el
 esquema creado y el usuario por defecto sembrado, y nada de lo que escriba
 sobrevive al siguiente.
+
+Login: por defecto cada request se hace como el usuario por defecto, sin
+cookie (se reemplaza `get_current_user`). `acting_as` cambia de usuario; los
+tests del login en si usan la fixture `real_auth`, que quita el reemplazo.
 """
 
 from collections.abc import Iterator
@@ -21,7 +25,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_current_user_id
+from app.api.deps import get_current_user
 from app.db.base_class import Base
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
@@ -29,13 +33,11 @@ from app.db.models import checklist as checklist_model  # noqa: F401
 from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
 from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
-from app.db.models import dummy as dummy_model  # noqa: F401
 from app.db.models import finance as finance_model  # noqa: F401
 from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
 from app.db.models.user import User
-from app.db.seed import ensure_default_user
 from app.db.session import get_db
 from app.main import app
 
@@ -73,6 +75,13 @@ Base.metadata.create_all(bind=test_engine)
 # abajo en cada test, asi que puede ser uno solo para toda la suite.
 client = TestClient(app)
 
+# Usuario "A" de todos los tests. Zona Bogota (UTC-5, sin horario de verano):
+# los tests de comidas y calendario hacen cuentas con ese offset.
+DEFAULT_USER_ID = 1
+
+# Pila de "quien hace el request": el tope es el usuario actual (ver acting_as).
+_acting_user_ids: list[int] = [DEFAULT_USER_ID]
+
 
 @pytest.fixture(autouse=True)
 def db_session():
@@ -86,7 +95,10 @@ def db_session():
     connection = test_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection, join_transaction_mode="create_savepoint")
-    ensure_default_user(session)
+    session.add(
+        User(id=DEFAULT_USER_ID, name="Ruben", email="ruben@example.com", timezone="America/Bogota")
+    )
+    session.commit()
 
     # Se replica la semantica de produccion (una transaccion por request, ver
     # app/db/session.py) en vez de entregar la sesion pelada: asi los tests
@@ -101,6 +113,7 @@ def db_session():
             raise
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: session.get(User, _acting_user_ids[-1])
     try:
         yield session
     finally:
@@ -112,8 +125,8 @@ def db_session():
 
 # --- Aislamiento entre usuarios ---
 
-# El usuario quemado (settings.default_user_id) es el "A" de los tests de
-# aislamiento; este es el "B", dueño de los recursos que A intenta tocar.
+# DEFAULT_USER_ID es el "A" de los tests de aislamiento; este es el "B",
+# dueño de los recursos que A intenta tocar.
 OTHER_USER_ID = 2
 
 
@@ -128,11 +141,18 @@ def other_user(db_session) -> int:
 
 @contextmanager
 def acting_as(user_id: int) -> Iterator[None]:
-    """Los requests dentro del bloque se hacen como `user_id`. Pisa la misma
-    dependencia que va a reemplazar el login, asi que ejercita el mismo
-    camino que tendra un usuario autenticado."""
-    app.dependency_overrides[get_current_user_id] = lambda: user_id
+    """Los requests dentro del bloque se hacen como `user_id`. Reemplaza al
+    usuario de la sesion, asi que todo lo que cuelga de el (id, zona horaria)
+    es el de `user_id`, igual que con un login real."""
+    _acting_user_ids.append(user_id)
     try:
         yield
     finally:
-        app.dependency_overrides.pop(get_current_user_id, None)
+        _acting_user_ids.pop()
+
+
+@pytest.fixture
+def real_auth():
+    """Quita el reemplazo de get_current_user: los requests necesitan una
+    cookie de sesion de verdad. Para los tests del login."""
+    app.dependency_overrides.pop(get_current_user, None)

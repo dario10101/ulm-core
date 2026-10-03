@@ -3,25 +3,26 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
+from app.api.deps import get_current_user
 from app.api.routes import (
+    auth,
     calendar_events,
     checklists,
     cld_tasks,
-    dummy,
     expenses,
-    habits,
     health,
     incomes,
+    me,
     meals,
     weights,
 )
 from app.core.config import settings
+from app.core.csrf import OriginCheckMiddleware
 from app.core.logging import configure_logging, get_logger
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
@@ -29,13 +30,10 @@ from app.db.models import checklist as checklist_model  # noqa: F401
 from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
 from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
-from app.db.models import dummy as dummy_model  # noqa: F401
 from app.db.models import finance as finance_model  # noqa: F401
 from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
-from app.db.seed import ensure_default_user
-from app.db.session import SessionLocal
 
 logger = get_logger(__name__)
 
@@ -45,18 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # El esquema ya no se crea aca: lo maneja Alembic (`alembic upgrade head`).
     # create_all() solo creaba tablas faltantes, nunca alteraba las existentes,
     # que era justo el problema. Ver ulm-repository/how-to/alembic.md.
+    # Los usuarios tampoco: se invitan con scripts/manage_users.py.
     configure_logging()
-    try:
-        db: Session = SessionLocal()
-        try:
-            ensure_default_user(db)
-        finally:
-            db.close()
-    except OperationalError:
-        # Postgres no disponible (ej. sin el contenedor local corriendo);
-        # la app sigue arriba, pero los endpoints que usan la base fallaran
-        # hasta levantarlo.
-        logger.warning("No se pudo conectar a la base de datos al iniciar")
     yield
 
 
@@ -67,6 +55,9 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    OriginCheckMiddleware, allowed_origins=[*settings.cors_origins, settings.frontend_url]
 )
 
 
@@ -99,16 +90,25 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
 
 
-app.include_router(health.router, prefix=settings.api_prefix)
-app.include_router(habits.router, prefix=settings.api_prefix)
-app.include_router(dummy.router, prefix=settings.api_prefix)
-app.include_router(weights.router, prefix=settings.api_prefix)
-app.include_router(meals.router, prefix=settings.api_prefix)
-app.include_router(expenses.router, prefix=settings.api_prefix)
-app.include_router(incomes.router, prefix=settings.api_prefix)
-app.include_router(checklists.router, prefix=settings.api_prefix)
-app.include_router(cld_tasks.router, prefix=settings.api_prefix)
-app.include_router(calendar_events.router, prefix=settings.api_prefix)
+# Rutas sin sesion. Cualquier otra exige login: se monta con get_current_user
+# a nivel de router, asi un endpoint nuevo queda protegido sin acordarse de
+# nada. tests/test_auth.py falla si aparece una ruta privada sin esa dependencia.
+PUBLIC_ROUTERS = (health.router, auth.router)
+PRIVATE_ROUTERS = (
+    me.router,
+    weights.router,
+    meals.router,
+    expenses.router,
+    incomes.router,
+    checklists.router,
+    cld_tasks.router,
+    calendar_events.router,
+)
+
+for router in PUBLIC_ROUTERS:
+    app.include_router(router, prefix=settings.api_prefix)
+for router in PRIVATE_ROUTERS:
+    app.include_router(router, prefix=settings.api_prefix, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/")

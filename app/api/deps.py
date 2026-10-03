@@ -4,19 +4,23 @@ Las rutas solo declaran una dependencia del Service; nunca instancian ni
 importan un repository directamente.
 
 Aca viven tambien las dependencias de identidad (quien es el usuario y en que
-zona horaria vive): las rutas las piden por Depends en vez de leer settings,
-asi el dia que exista login solo cambia este archivo.
+zona horaria vive): las rutas piden `get_current_user_id` por Depends y no
+saben de cookies ni sesiones. Los tests reemplazan `get_current_user` (ver
+tests/conftest.py, acting_as).
 """
 
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
+from app.api.session_cookie import SESSION_COOKIE, set_session_cookie
 from app.core.config import settings
 from app.db.models.finance import DirectIncome
 from app.db.models.user import User
 from app.db.session import get_db
+from app.integrations.google_oauth import GoogleOAuthClient, HttpGoogleOAuthClient
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
@@ -48,6 +52,8 @@ from app.repositories.sqlalchemy_task_repository import SqlAlchemyTaskRepository
 from app.repositories.sqlalchemy_template_task_repository import (
     SqlAlchemyTemplateTaskRepository,
 )
+from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from app.repositories.sqlalchemy_user_session_repository import SqlAlchemyUserSessionRepository
 from app.repositories.sqlalchemy_week_category_day_score_repository import (
     SqlAlchemyWeekCategoryDayScoreRepository,
 )
@@ -55,9 +61,12 @@ from app.repositories.sqlalchemy_week_repository import SqlAlchemyWeekRepository
 from app.repositories.sqlalchemy_weight_repository import SqlAlchemyWeightRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.template_task_repository import TemplateTaskRepository
+from app.repositories.user_repository import UserRepository
+from app.repositories.user_session_repository import UserSessionRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
 from app.repositories.week_repository import WeekRepository
 from app.repositories.weight_repository import WeightRepository
+from app.services.auth_service import AuthService
 from app.services.calendar_event_service import CalendarEventService
 from app.services.category_service import CategoryService
 from app.services.checklist_analytics_service import ChecklistAnalyticsService
@@ -69,24 +78,74 @@ from app.services.income_service import IncomeService
 from app.services.income_summary_service import IncomeSummaryService
 from app.services.meal_service import MealService
 from app.services.template_task_service import TemplateTaskService
+from app.services.user_admin_service import UserAdminService
 from app.services.week_service import WeekService
 from app.services.weight_service import WeightService
 
-
-def get_current_user_id() -> int:
-    """Usuario quemado: todavia no hay auth. Cuando exista login, este es el
-    unico lugar que cambia."""
-    return settings.default_user_id
+# --- Identidad ---
 
 
-def get_current_timezone(
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
-) -> ZoneInfo:
+def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:
+    return SqlAlchemyUserRepository(db)
+
+
+def get_user_session_repository(db: Session = Depends(get_db)) -> UserSessionRepository:
+    return SqlAlchemyUserSessionRepository(db)
+
+
+@lru_cache
+def get_google_oauth_client() -> GoogleOAuthClient:
+    """Uno solo por proceso: reutiliza las conexiones HTTP a Google."""
+    return HttpGoogleOAuthClient(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=settings.google_redirect_uri,
+    )
+
+
+def get_user_admin_service(
+    users: UserRepository = Depends(get_user_repository),
+    sessions: UserSessionRepository = Depends(get_user_session_repository),
+) -> UserAdminService:
+    return UserAdminService(users, sessions)
+
+
+def get_auth_service(
+    users: UserRepository = Depends(get_user_repository),
+    sessions: UserSessionRepository = Depends(get_user_session_repository),
+    user_admin: UserAdminService = Depends(get_user_admin_service),
+    google: GoogleOAuthClient = Depends(get_google_oauth_client),
+) -> AuthService:
+    return AuthService(users, sessions, user_admin, google)
+
+
+def get_current_user(
+    request: Request,
+    response: Response,
+    auth: AuthService = Depends(get_auth_service),
+) -> User:
+    """Usuario de la cookie de sesion, o 401. Si la expiracion deslizante se
+    renovo, reenvia la cookie para que el navegador tambien la extienda."""
+    token = request.cookies.get(SESSION_COOKIE)
+    user, renewed = auth.resolve_session(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sesion no iniciada o vencida")
+    if renewed and token is not None:
+        set_session_cookie(response, token)
+    return user
+
+
+def get_current_user_id(user: User = Depends(get_current_user)) -> int:
+    return user.id
+
+
+def get_current_timezone(user: User = Depends(get_current_user)) -> ZoneInfo:
     """Zona IANA del usuario. Todo calculo de calendario (dia, dia de semana,
     dia del mes) se hace convirtiendo a esta zona; la BD guarda UTC."""
-    user = db.get(User, user_id)
-    return ZoneInfo(user.timezone if user is not None else settings.default_user_timezone)
+    return ZoneInfo(user.timezone)
+
+
+# --- Dominios ---
 
 
 def get_weight_repository(db: Session = Depends(get_db)) -> WeightRepository:

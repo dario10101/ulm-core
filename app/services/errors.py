@@ -214,3 +214,56 @@ class InterestPeriodTakenError(ConflictError):
 
     def __init__(self) -> None:
         super().__init__("Ya existe un registro de intereses para esa fuente en ese mes")
+
+
+# --- Usuarios y login ---
+
+
+class UserNotFoundError(NotFoundError):
+    """El usuario no existe."""
+
+
+class EmailTakenError(ConflictError):
+    """Ya hay un usuario con ese email (sin distinguir mayusculas)."""
+
+    def __init__(self, email: str) -> None:
+        self.email = email
+        super().__init__(f"Ya existe un usuario con el email {email}")
+
+
+class LoginError(DomainError):
+    """Raiz de los motivos por los que un login no termina en sesion. Cada
+    subclase tiene un `code` que la ruta manda al front (/login?error=code)
+    para que muestre el mensaje correspondiente."""
+
+    code = "oauth_failed"
+
+
+class LoginNotConfiguredError(LoginError):
+    """Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / SESSION_SECRET."""
+
+    code = "not_configured"
+
+
+class LoginFlowError(LoginError):
+    """El flujo OAuth no cierra: state que no coincide, cookie del login
+    vencida o ausente, o Google rechazo el code / el id_token."""
+
+    code = "oauth_failed"
+
+
+class EmailNotVerifiedError(LoginError):
+    """Google no garantiza que la cuenta sea dueña de ese email: no se puede
+    usar para vincular ni para buscar una invitacion."""
+
+    code = "email_not_verified"
+
+
+class NotInvitedError(LoginError):
+    """Modo invite_only y no hay usuario con ese email."""
+
+    code = "not_invited"
+
+
+class UserDisabledError(LoginError):
+    code = "disabled"

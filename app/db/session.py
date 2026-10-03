@@ -29,10 +29,11 @@ def get_db() -> Generator[Session, None, None]:
 
     Ahora, o se escribe la operacion completa o no se escribe nada.
 
-    Nota: FastAPI ejecuta el codigo posterior al `yield` despues de enviar la
-    respuesta, asi que un fallo del commit en si (no de las escrituras, que ya
-    se validaron en el flush) se registra en el log pero no alcanza a cambiar
-    la respuesta que el cliente ya recibio.
+    Nota: desde FastAPI 0.106 el codigo posterior al `yield` corre *antes* de
+    enviar la respuesta (ver fastapi/routing.py, get_request_handler). Asi que
+    cuando el cliente recibe la respuesta, lo escrito ya esta commiteado: el
+    login puede redirigir al front y el siguiente request ya encuentra la
+    sesion. Y si el commit falla, el cliente recibe el error, no un exito falso.
     """
     db = SessionLocal()
     try:
