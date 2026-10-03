@@ -29,8 +29,12 @@ class SqlAlchemyWeekRepository:
             .limit(1)
         ).scalar_one_or_none()
 
-    def get(self, week_id: int) -> ChecklistWeek | None:
-        return self._db.get(ChecklistWeek, week_id)
+    def get(self, week_id: int, *, user_id: int) -> ChecklistWeek | None:
+        return self._db.execute(
+            select(ChecklistWeek).where(
+                ChecklistWeek.id == week_id, ChecklistWeek.user_id == user_id
+            )
+        ).scalar_one_or_none()
 
     def flush(self) -> None:
         self._db.flush()

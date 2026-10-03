@@ -72,6 +72,8 @@ class SqlAlchemyWeightRepository:
         # SQLite de los tests (mismo criterio que el resumen de gastos).
         if group_by == "day":
             period = [WeightRecord.recorded_on]
+        elif group_by == "year":
+            period = [extract("year", WeightRecord.recorded_on)]
         else:
             period = [
                 extract("year", WeightRecord.recorded_on),
@@ -88,6 +90,8 @@ class SqlAlchemyWeightRepository:
             *parts, average, count = row
             if group_by == "day":
                 key = str(parts[0])
+            elif group_by == "year":
+                key = f"{int(parts[0]):04d}"
             else:
                 key = f"{int(parts[0]):04d}-{int(parts[1]):02d}"
             rows.append((key, Decimal(str(average)), count))
@@ -99,9 +103,6 @@ class SqlAlchemyWeightRepository:
             select(year).where(WeightRecord.user_id == user_id).group_by(year).order_by(year.desc())
         )
         return [int(value) for value in result.scalars()]
-
-    def get(self, weight_id: int) -> WeightRecord | None:
-        return self._db.get(WeightRecord, weight_id)
 
     def update(
         self,

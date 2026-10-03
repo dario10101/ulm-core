@@ -29,11 +29,12 @@ class ChecklistTaskService:
         self._category_repository = category_repository
 
     def list_tasks_for_week(self, user_id: int, week_id: int) -> list[TaskRead]:
-        week = self._week_repository.get(week_id)
-        if week is None or week.user_id != user_id:
+        week = self._week_repository.get(week_id, user_id=user_id)
+        if week is None:
             raise WeekNotFoundError(week_id)
         return [
-            checklist_task_to_read(t) for t in self._task_repository.list_visible_by_week(week_id)
+            checklist_task_to_read(t)
+            for t in self._task_repository.list_visible_by_week(week_id, user_id=user_id)
         ]
 
     def create_task(
@@ -50,21 +51,18 @@ class ChecklistTaskService:
         """Tarea circunstancial agregada directamente a la semana (no viene del
         template y no lo modifica): sirve para algo puntual de esta semana que
         no vale la pena generalizar."""
-        week = self._week_repository.get(week_id)
-        if week is None or week.user_id != user_id:
+        week = self._week_repository.get(week_id, user_id=user_id)
+        if week is None:
             raise WeekNotFoundError(week_id)
         if week.closed:
             raise WeekClosedError(week.id)
 
-        category = self._category_repository.get(category_id)
-        if (
-            category is None
-            or category.user_id != user_id
-            or category.status != CategoryStatus.ENABLED.value
-        ):
+        category = self._category_repository.get(category_id, user_id=user_id)
+        if category is None or category.status != CategoryStatus.ENABLED.value:
             raise CategoryNotFoundError(category_id)
 
         task = ChecklistTask(
+            user_id=user_id,
             cl_week_id=week.id,
             name=name,
             day_of_week=str(day_of_week),
@@ -99,12 +97,8 @@ class ChecklistTaskService:
         semana (modo Edit del checklist). No cambia el dia ni la semana."""
         task = self._get_owned_open_task(user_id, task_id)
 
-        category = self._category_repository.get(category_id)
-        if (
-            category is None
-            or category.user_id != user_id
-            or category.status != CategoryStatus.ENABLED.value
-        ):
+        category = self._category_repository.get(category_id, user_id=user_id)
+        if category is None or category.status != CategoryStatus.ENABLED.value:
             raise CategoryNotFoundError(category_id)
 
         task.name = name
@@ -121,12 +115,14 @@ class ChecklistTaskService:
         self._task_repository.flush()
 
     def _get_owned_open_task(self, user_id: int, task_id: int) -> ChecklistTask:
-        task = self._task_repository.get(task_id)
+        task = self._task_repository.get(task_id, user_id=user_id)
         if task is None:
             raise TaskNotFoundError(task_id)
 
-        week = self._week_repository.get(task.cl_week_id)
-        if week is None or week.user_id != user_id:
+        # La semana se busca igual para saber si esta cerrada. Que sea del
+        # mismo usuario ya lo garantiza la FK compuesta de cl_week_tasks.
+        week = self._week_repository.get(task.cl_week_id, user_id=user_id)
+        if week is None:
             raise TaskNotFoundError(task_id)
         if week.closed:
             raise WeekClosedError(week.id)

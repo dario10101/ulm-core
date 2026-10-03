@@ -65,7 +65,7 @@ def summarize_weights(
     user_id: int = Depends(get_current_user_id),
     service: WeightService = Depends(get_weight_service),
 ) -> WeightSummaryRead:
-    """Peso promedio por mes o por dia (para los graficos de analytics)."""
+    """Peso promedio por año, mes o dia (para los graficos de analytics)."""
     return service.summarize_weights(
         user_id=user_id, group_by=group_by, start_date=start_date, end_date=end_date
     )

@@ -202,6 +202,7 @@ def build_checklist_task(cld_task: CldTask, week_id: int, occurrence_date: date)
     """`occurrence_date` es un dia local del usuario, asi que su isoweekday()
     es el dia de semana que el usuario efectivamente ve en el checklist."""
     return ChecklistTask(
+        user_id=cld_task.user_id,
         cl_week_id=week_id,
         name=cld_task.name,
         day_of_week=str(occurrence_date.isoweekday()),

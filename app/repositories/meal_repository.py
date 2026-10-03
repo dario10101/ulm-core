@@ -34,8 +34,6 @@ class MealRepository(Protocol):
         limit: int,
     ) -> tuple[Sequence[Meal], int]: ...
 
-    def get(self, meal_id: int) -> Meal | None: ...
-
     def update(
         self,
         meal_id: int,

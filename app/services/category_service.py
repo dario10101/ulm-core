@@ -32,8 +32,8 @@ class CategoryService:
     def enable_category(self, user_id: int, category_id: int) -> CategoryRead:
         """Reactiva una categoria DISABLED: vuelve a aparecer en todas las
         listas ENABLED, al final (nueva prioridad = ultima + 1)."""
-        category = self._repository.get(category_id)
-        if category is None or category.user_id != user_id:
+        category = self._repository.get(category_id, user_id=user_id)
+        if category is None:
             raise CategoryNotFoundError({category_id})
 
         enabled = self._repository.list_by_user(user_id)
@@ -61,7 +61,7 @@ class CategoryService:
         in_use = [
             existing[category_id].name
             for category_id in to_delete_ids
-            if self._repository.has_template_tasks(category_id)
+            if self._repository.has_template_tasks(category_id, user_id=user_id)
         ]
         if in_use:
             raise CategoryInUseError(in_use)

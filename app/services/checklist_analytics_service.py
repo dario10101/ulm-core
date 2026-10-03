@@ -46,7 +46,7 @@ class ChecklistAnalyticsService:
         self, user_id: int, year: int
     ) -> tuple[list[tuple[int | None, str]], list[dict]]:
         weeks = self._week_repository.list_closed_by_year(user_id, year)
-        rows = self._score_repository.list_by_week_ids([week.id for week in weeks])
+        rows = self._score_repository.list_by_week_ids([week.id for week in weeks], user_id=user_id)
 
         per_week_category: dict[tuple[int, int], int] = defaultdict(int)
         category_totals: dict[int, int] = defaultdict(int)
@@ -74,7 +74,7 @@ class ChecklistAnalyticsService:
         self, user_id: int, year: int
     ) -> tuple[list[tuple[int | None, str]], list[dict]]:
         weeks = self._week_repository.list_closed_overlapping_year(user_id, year)
-        rows = self._score_repository.list_by_week_ids([week.id for week in weeks])
+        rows = self._score_repository.list_by_week_ids([week.id for week in weeks], user_id=user_id)
         weeks_by_id = {week.id: week for week in weeks}
         year_start, year_end = date(year, 1, 1), date(year, 12, 31)
 

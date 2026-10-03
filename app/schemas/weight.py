@@ -36,11 +36,11 @@ class WeightPage(BaseModel):
     total_pages: int
 
 
-WeightSummaryGroupBy = Literal["month", "day"]
+WeightSummaryGroupBy = Literal["year", "month", "day"]
 
 
 class WeightSummaryBucket(BaseModel):
-    # "YYYY-MM" (month) o "YYYY-MM-DD" (day).
+    # "YYYY" (year), "YYYY-MM" (month) o "YYYY-MM-DD" (day).
     key: str
     average_kg: float
     count: int

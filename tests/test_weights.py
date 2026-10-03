@@ -173,6 +173,15 @@ def test_summary_by_day_averages_multiple_weigh_ins_of_the_same_day():
     ]
 
 
+def test_summary_by_year_averages_each_year():
+    _post_weights([("2024-05-01", 80.0), ("2024-11-01", 78.0), ("2026-02-01", 74.0)])
+    body = client.get("/api/v1/weights/summary", params={"group_by": "year"}).json()
+    assert body["buckets"] == [
+        {"key": "2024", "average_kg": 79.0, "count": 2},
+        {"key": "2026", "average_kg": 74.0, "count": 1},
+    ]
+
+
 def test_summary_without_records_is_empty():
     body = client.get("/api/v1/weights/summary", params={"group_by": "month"}).json()
     assert body == {"buckets": [], "average_kg": None, "count": 0, "available_years": []}

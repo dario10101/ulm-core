@@ -11,7 +11,9 @@ class WeekRepository(Protocol):
 
     def get_latest(self, user_id: int) -> ChecklistWeek | None: ...
 
-    def get(self, week_id: int) -> ChecklistWeek | None: ...
+    def get(self, week_id: int, *, user_id: int) -> ChecklistWeek | None:
+        """None si no existe o si es de otro usuario: para quien pregunta, es lo mismo."""
+        ...
 
     def flush(self) -> None:
         """Manda los INSERT/UPDATE pendientes a la base sin cerrar la

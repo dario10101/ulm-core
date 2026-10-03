@@ -10,5 +10,5 @@ class WeekCategoryDayScoreRepository(Protocol):
     def add(self, row: ChecklistWeekCategoryDayScore) -> None: ...
 
     def list_by_week_ids(
-        self, week_ids: Sequence[int]
+        self, week_ids: Sequence[int], *, user_id: int
     ) -> Sequence[ChecklistWeekCategoryDayScore]: ...

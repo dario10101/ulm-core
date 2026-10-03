@@ -55,8 +55,12 @@ class SqlAlchemyCategoryRepository:
             .all()
         )
 
-    def get(self, category_id: int) -> ChecklistCategory | None:
-        return self._db.get(ChecklistCategory, category_id)
+    def get(self, category_id: int, *, user_id: int) -> ChecklistCategory | None:
+        return self._db.execute(
+            select(ChecklistCategory).where(
+                ChecklistCategory.id == category_id, ChecklistCategory.user_id == user_id
+            )
+        ).scalar_one_or_none()
 
     def flush(self) -> None:
         self._db.flush()
@@ -71,9 +75,14 @@ class SqlAlchemyCategoryRepository:
         category.status = CategoryStatus.ENABLED.value
         category.priority = priority
 
-    def has_template_tasks(self, category_id: int) -> bool:
+    def has_template_tasks(self, category_id: int, *, user_id: int) -> bool:
         return bool(
             self._db.scalar(
-                select(exists().where(ChecklistTemplateTask.category_id == category_id))
+                select(
+                    exists().where(
+                        ChecklistTemplateTask.category_id == category_id,
+                        ChecklistTemplateTask.user_id == user_id,
+                    )
+                )
             )
         )

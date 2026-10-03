@@ -109,7 +109,7 @@ class TemplateTaskService:
     def _get_owned_task(self, task_id: int, user_id: int) -> ChecklistTemplateTask:
         """La pertenencia sale de la columna, no de un join con la categoria:
         un query menos y sin depender de que la categoria este bien asignada."""
-        task = self._repository.get(task_id)
-        if task is None or task.user_id != user_id:
+        task = self._repository.get(task_id, user_id=user_id)
+        if task is None:
             raise TemplateTaskNotFoundError(task_id)
         return task

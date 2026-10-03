@@ -61,12 +61,8 @@ class CldTaskService:
     ) -> CldTaskRead:
         """`scheduled_date`/`repeat_date` llegan en hora de pared del usuario
         (el schema rechaza un datetime con tzinfo) y se guardan en UTC."""
-        category = self._category_repository.get(category_id)
-        if (
-            category is None
-            or category.user_id != user_id
-            or category.status != CategoryStatus.ENABLED.value
-        ):
+        category = self._category_repository.get(category_id, user_id=user_id)
+        if category is None or category.status != CategoryStatus.ENABLED.value:
             raise CategoryNotFoundError(category_id)
 
         task = CldTask(
@@ -127,12 +123,8 @@ class CldTaskService:
         add_to_checklist (no se exponen como parametros a proposito)."""
         task = self._get_owned_task(user_id, task_id)
 
-        category = self._category_repository.get(category_id)
-        if (
-            category is None
-            or category.user_id != user_id
-            or category.status != CategoryStatus.ENABLED.value
-        ):
+        category = self._category_repository.get(category_id, user_id=user_id)
+        if category is None or category.status != CategoryStatus.ENABLED.value:
             raise CategoryNotFoundError(category_id)
 
         if task.repeat_mode is None:
@@ -210,7 +202,7 @@ class CldTaskService:
         self._task_repository.flush()
 
     def _get_owned_task(self, user_id: int, task_id: int) -> CldTask:
-        task = self._cld_task_repository.get(task_id)
-        if task is None or task.user_id != user_id:
+        task = self._cld_task_repository.get(task_id, user_id=user_id)
+        if task is None:
             raise CldTaskNotFoundError(task_id)
         return task

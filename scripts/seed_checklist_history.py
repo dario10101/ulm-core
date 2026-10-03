@@ -117,6 +117,7 @@ def backfill_existing_closed_week(session, week: ChecklistWeek) -> None:
     for (category_id, day_of_week), totals_for_key in totals.items():
         session.add(
             ChecklistWeekCategoryDayScore(
+                user_id=week.user_id,
                 cl_week_id=week.id,
                 category_id=category_id,
                 day_of_week=day_of_week,
@@ -182,6 +183,7 @@ def main() -> None:
 
             for row in score_rows:
                 row.cl_week_id = week.id
+                row.user_id = week.user_id
                 session.add(row)
             created += 1
 

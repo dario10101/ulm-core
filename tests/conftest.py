@@ -12,12 +12,16 @@ esquema creado y el usuario por defecto sembrado, y nada de lo que escriba
 sobrevive al siguiente.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_current_user_id
 from app.db.base_class import Base
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
@@ -30,6 +34,7 @@ from app.db.models import finance as finance_model  # noqa: F401
 from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
+from app.db.models.user import User
 from app.db.seed import ensure_default_user
 from app.db.session import get_db
 from app.main import app
@@ -51,6 +56,10 @@ test_engine = create_engine(
 @event.listens_for(test_engine, "connect")
 def _disable_pysqlite_implicit_begin(dbapi_connection, connection_record):
     dbapi_connection.isolation_level = None
+    # SQLite ignora las FOREIGN KEY salvo que se active por conexion. Sin
+    # esto, las FK compuestas que impiden referenciar filas de otro usuario
+    # (ver app/db/models/checklist.py) no se probarian nunca fuera de Postgres.
+    dbapi_connection.execute("PRAGMA foreign_keys = ON")
 
 
 @event.listens_for(test_engine, "begin")
@@ -99,3 +108,31 @@ def db_session():
         session.close()
         transaction.rollback()
         connection.close()
+
+
+# --- Aislamiento entre usuarios ---
+
+# El usuario quemado (settings.default_user_id) es el "A" de los tests de
+# aislamiento; este es el "B", dueño de los recursos que A intenta tocar.
+OTHER_USER_ID = 2
+
+
+@pytest.fixture
+def other_user(db_session) -> int:
+    db_session.add(
+        User(id=OTHER_USER_ID, name="Otra persona", email="otra@example.com", timezone="UTC")
+    )
+    db_session.commit()
+    return OTHER_USER_ID
+
+
+@contextmanager
+def acting_as(user_id: int) -> Iterator[None]:
+    """Los requests dentro del bloque se hacen como `user_id`. Pisa la misma
+    dependencia que va a reemplazar el login, asi que ejercita el mismo
+    camino que tendra un usuario autenticado."""
+    app.dependency_overrides[get_current_user_id] = lambda: user_id
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)

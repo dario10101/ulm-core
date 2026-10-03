@@ -982,7 +982,12 @@ def test_disabled_category_keeps_its_history_in_analytics(db_session):
     db_session.flush()
     db_session.add(
         ChecklistWeekCategoryDayScore(
-            cl_week_id=week.id, category_id=category_id, day_of_week=1, score=7, points_possible=7
+            user_id=1,
+            cl_week_id=week.id,
+            category_id=category_id,
+            day_of_week=1,
+            score=7,
+            points_possible=7,
         )
     )
     db_session.commit()
@@ -1057,6 +1062,7 @@ def test_monthly_analytics_splits_a_week_that_crosses_month_boundary(db_session)
         actual_date = first_day + timedelta(days=offset)
         db_session.add(
             ChecklistWeekCategoryDayScore(
+                user_id=1,
                 cl_week_id=week.id,
                 category_id=category_id,
                 day_of_week=actual_date.isoweekday(),
@@ -1103,6 +1109,7 @@ def test_weekly_analytics_groups_low_scoring_categories_into_others(db_session):
     for category_id, score in zip(category_ids, scores, strict=True):
         db_session.add(
             ChecklistWeekCategoryDayScore(
+                user_id=1,
                 cl_week_id=week.id,
                 category_id=category_id,
                 day_of_week=1,

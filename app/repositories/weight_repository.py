@@ -43,8 +43,6 @@ class WeightRepository(Protocol):
         """Años con al menos un registro, de mas reciente a mas antiguo."""
         ...
 
-    def get(self, weight_id: int) -> WeightRecord | None: ...
-
     def update(
         self,
         weight_id: int,

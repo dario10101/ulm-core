@@ -15,13 +15,16 @@ class SqlAlchemyWeekCategoryDayScoreRepository:
     def add(self, row: ChecklistWeekCategoryDayScore) -> None:
         self._db.add(row)
 
-    def list_by_week_ids(self, week_ids: Sequence[int]) -> Sequence[ChecklistWeekCategoryDayScore]:
+    def list_by_week_ids(
+        self, week_ids: Sequence[int], *, user_id: int
+    ) -> Sequence[ChecklistWeekCategoryDayScore]:
         if not week_ids:
             return []
         return (
             self._db.execute(
                 select(ChecklistWeekCategoryDayScore).where(
-                    ChecklistWeekCategoryDayScore.cl_week_id.in_(week_ids)
+                    ChecklistWeekCategoryDayScore.user_id == user_id,
+                    ChecklistWeekCategoryDayScore.cl_week_id.in_(week_ids),
                 )
             )
             .scalars()

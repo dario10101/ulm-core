@@ -28,8 +28,12 @@ class SqlAlchemyTemplateTaskRepository:
             .all()
         )
 
-    def get(self, task_id: int) -> ChecklistTemplateTask | None:
-        return self._db.get(ChecklistTemplateTask, task_id)
+    def get(self, task_id: int, *, user_id: int) -> ChecklistTemplateTask | None:
+        return self._db.execute(
+            select(ChecklistTemplateTask).where(
+                ChecklistTemplateTask.id == task_id, ChecklistTemplateTask.user_id == user_id
+            )
+        ).scalar_one_or_none()
 
     def flush(self) -> None:
         self._db.flush()

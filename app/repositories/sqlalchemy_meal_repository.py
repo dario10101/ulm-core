@@ -67,9 +67,6 @@ class SqlAlchemyMealRepository:
         )
         return items, total or 0
 
-    def get(self, meal_id: int) -> Meal | None:
-        return self._db.get(Meal, meal_id)
-
     def update(
         self,
         meal_id: int,

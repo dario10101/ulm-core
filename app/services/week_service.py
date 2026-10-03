@@ -97,6 +97,7 @@ class WeekService:
             for day in parse_days(template_task.day_of_week):
                 self._task_repository.add(
                     ChecklistTask(
+                        user_id=user_id,
                         cl_week_id=week.id,
                         name=template_task.name,
                         day_of_week=str(day),
@@ -125,7 +126,7 @@ class WeekService:
         # deshabilitadas: esas siguen sumando a su puntaje historico tal como
         # estan, solo no bloquean el cierre (el usuario no tiene forma de
         # marcarlas desde la UI, que ya no las muestra).
-        tasks = self._task_repository.list_by_week(week_id)
+        tasks = self._task_repository.list_by_week(week_id, user_id=user_id)
         disabled_category_ids = self._disabled_category_ids(user_id, tasks)
         pending_count = sum(
             1
@@ -145,7 +146,7 @@ class WeekService:
         week.closed = True
         week.closed_date = datetime.now(UTC)
         week.score = score
-        self._save_category_day_scores(week.id, tasks)
+        self._save_category_day_scores(week, tasks)
         self._week_repository.flush()
         return week_to_read(week)
 
@@ -158,7 +159,7 @@ class WeekService:
             if category.status != CategoryStatus.ENABLED.value
         }
 
-    def _save_category_day_scores(self, week_id: int, tasks: list[ChecklistTask]) -> None:
+    def _save_category_day_scores(self, week: ChecklistWeek, tasks: list[ChecklistTask]) -> None:
         """Materializa cl_week_category_day_score al cerrar la semana: una
         semana cerrada es inmutable, asi que este es el unico momento en que
         vale la pena calcular este agregado (evita recalcularlo en cada
@@ -180,7 +181,8 @@ class WeekService:
         for (category_id, day_of_week), totals_for_key in totals.items():
             self._score_repository.add(
                 ChecklistWeekCategoryDayScore(
-                    cl_week_id=week_id,
+                    user_id=week.user_id,
+                    cl_week_id=week.id,
                     category_id=category_id,
                     day_of_week=day_of_week,
                     score=totals_for_key["score"],
@@ -189,7 +191,7 @@ class WeekService:
             )
 
     def _get_owned_week(self, week_id: int, user_id: int) -> ChecklistWeek:
-        week = self._week_repository.get(week_id)
-        if week is None or week.user_id != user_id:
+        week = self._week_repository.get(week_id, user_id=user_id)
+        if week is None:
             raise WeekNotFoundError(week_id)
         return week

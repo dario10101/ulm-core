@@ -48,8 +48,10 @@ class SqlAlchemyCldTaskRepository:
             .all()
         )
 
-    def get(self, task_id: int) -> CldTask | None:
-        return self._db.get(CldTask, task_id)
+    def get(self, task_id: int, *, user_id: int) -> CldTask | None:
+        return self._db.execute(
+            select(CldTask).where(CldTask.id == task_id, CldTask.user_id == user_id)
+        ).scalar_one_or_none()
 
     def flush(self) -> None:
         self._db.flush()
