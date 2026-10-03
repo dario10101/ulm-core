@@ -65,5 +65,11 @@ jobs:
         run: alembic upgrade head
       - name: Sin drift entre modelos y esquema
         run: alembic check
+      # alembic check no compara nombres (PK, FK, indices, secuencias): un
+      # renombre de tabla mal hecho pasa sin aviso. Este script si los compara.
+      - name: Sin drift de nombres
+        run: python -m scripts.check_db_names
       - name: Downgrade reversible
         run: alembic downgrade base
+      - name: Upgrade despues del downgrade
+        run: alembic upgrade head

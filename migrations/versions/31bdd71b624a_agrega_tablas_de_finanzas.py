@@ -189,13 +189,19 @@ def upgrade() -> None:
         sa.column('color_key', sa.String),
         sa.column('status', sa.String),
     )
-    op.bulk_insert(
-        tags_table,
-        [
-            {'user_id': 1, 'name': name, 'color_key': color_key, 'status': 'ENABLED'}
-            for name, color_key in TAGS_SEED
-        ],
-    )
+    # En una base nueva (CI, otra maquina) el usuario 1 todavia no existe: lo
+    # crea la app al arrancar (ensure_default_user), despues de migrar. Sin este
+    # chequeo el INSERT violaba la FK y la migracion entera fallaba. Editar una
+    # migracion ya aplicada es seguro solo porque en las bases donde ya corrio
+    # el resultado habria sido el mismo.
+    if op.get_bind().execute(sa.text('SELECT 1 FROM users WHERE id = 1')).scalar():
+        op.bulk_insert(
+            tags_table,
+            [
+                {'user_id': 1, 'name': name, 'color_key': color_key, 'status': 'ENABLED'}
+                for name, color_key in TAGS_SEED
+            ],
+        )
 
 
 def downgrade() -> None:

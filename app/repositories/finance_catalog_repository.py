@@ -7,7 +7,7 @@ app/repositories/weight_repository.py para el mismo patron).
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.db.models.finance import Category, PaymentMethod, Tag
+from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
 
 
 class FinanceCatalogRepository(Protocol):
@@ -26,3 +26,15 @@ class FinanceCatalogRepository(Protocol):
         viejo puede referenciar un tag ya DISABLED y debe poder seguir
         leyendose."""
         ...
+
+    def list_income_sources(self, user_id: int) -> Sequence[IncomeSource]: ...
+
+    def list_income_subcategories(self, user_id: int) -> Sequence[IncomeSubcategory]: ...
+
+    def get_income_source(self, user_id: int, source_id: int) -> IncomeSource | None:
+        """None si no existe o no es de ese usuario."""
+        ...
+
+    def get_income_subcategory(
+        self, user_id: int, subcategory_id: int
+    ) -> IncomeSubcategory | None: ...

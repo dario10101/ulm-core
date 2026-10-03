@@ -11,7 +11,7 @@ from app.db.base_class import Base
 class DummyRecord(Base):
     __tablename__ = "dummy"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     value: Mapped[float] = mapped_column(Float, default=0.0)

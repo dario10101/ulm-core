@@ -10,10 +10,10 @@ from app.db.base_class import Base
 
 
 class WeightRecord(Base):
-    __tablename__ = "weights"
-    __table_args__ = (Index("ix_weights_user_recorded_on", "user_id", "recorded_on"),)
+    __tablename__ = "user_weights"
+    __table_args__ = (Index("ix_user_weights_user_recorded_on", "user_id", "recorded_on"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     # Numeric en vez de Float: evita errores de redondeo binario para un valor
     # exacto (72.4 != 72.400000001)

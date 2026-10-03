@@ -103,6 +103,65 @@ def test_replace_categories_rejects_unknown_id():
     assert response.status_code == 404
 
 
+# --- Unicidad de nombre de categoria (usuario + lower(name), contando DISABLED) ---
+
+
+def _put_categories(items: list[dict]):
+    return client.put("/api/v1/checklists/categories", json={"items": items})
+
+
+def test_swapping_two_category_names_works():
+    """El indice unico se valida fila por fila: sin el renombre en dos pasos,
+    el primer UPDATE chocaria contra el nombre que la otra todavia tiene."""
+    created = _put_categories([{"name": "Alfa"}, {"name": "Beta"}]).json()
+    alfa, beta = created[0]["id"], created[1]["id"]
+
+    response = _put_categories([{"id": alfa, "name": "Beta"}, {"id": beta, "name": "Alfa"}])
+
+    assert response.status_code == 200
+    assert {c["id"]: c["name"] for c in response.json()} == {alfa: "Beta", beta: "Alfa"}
+
+
+def test_new_category_with_a_disabled_name_is_rejected():
+    created = _put_categories([{"name": "Salud"}, {"name": "Otra"}]).json()
+    otra = created[1]["id"]
+    _put_categories([{"id": otra, "name": "Otra"}])  # deshabilita "Salud"
+
+    # Sin distinguir mayusculas: "SALUD" choca con la "Salud" deshabilitada.
+    response = _put_categories([{"id": otra, "name": "Otra"}, {"name": "SALUD"}])
+
+    assert response.status_code == 409
+    assert "SALUD" in response.json()["detail"]
+
+
+def test_deleting_and_recreating_a_name_in_the_same_save_is_rejected():
+    """La que se deshabilita en este guardado conserva su nombre, asi que
+    tampoco se puede crear otra igual en el mismo paso."""
+    created = _put_categories([{"name": "Repetida"}]).json()
+    assert created[0]["name"] == "Repetida"
+
+    response = _put_categories([{"name": "Repetida"}])
+
+    assert response.status_code == 409
+
+
+def test_duplicated_names_in_one_save_are_rejected():
+    # " salud " se recorta en el schema, asi que es la misma "Salud".
+    response = _put_categories([{"name": "Salud"}, {"name": " salud "}])
+
+    assert response.status_code == 422
+    assert client.get("/api/v1/checklists/categories").json() == []
+
+
+def test_renaming_only_the_case_of_a_category_is_allowed():
+    created = _put_categories([{"name": "salud"}]).json()
+
+    response = _put_categories([{"id": created[0]["id"], "name": "Salud"}])
+
+    assert response.status_code == 200
+    assert response.json()[0]["name"] == "Salud"
+
+
 # --- Template tasks ---
 
 
@@ -378,6 +437,25 @@ def test_create_week_blocked_while_one_is_open():
         json={"first_day": _d(7), "last_day": _d(13)},
     )
     assert response.status_code == 409
+
+
+def test_database_rejects_a_second_open_week_even_if_the_service_misses_it(db_session, monkeypatch):
+    """Simula dos requests simultaneos: el service no ve la semana abierta
+    (como si la otra todavia no se hubiera escrito) y el indice unico parcial
+    de la base es lo que la frena. El cliente recibe 409, no 500."""
+    _open_week_with_template_tasks()
+    monkeypatch.setattr(
+        "app.repositories.sqlalchemy_week_repository.SqlAlchemyWeekRepository.get_current_open",
+        lambda self, user_id: None,
+    )
+
+    response = client.post(
+        "/api/v1/checklists/weeks",
+        json={"first_day": _d(7), "last_day": _d(13)},
+    )
+
+    assert response.status_code == 409
+    assert db_session.query(ChecklistWeek).filter(ChecklistWeek.closed.is_(False)).count() == 1
 
 
 def test_close_week_blocked_while_tasks_are_pending():

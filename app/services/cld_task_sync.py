@@ -1,5 +1,5 @@
-"""Logica compartida para sincronizar tareas de calendario (cld_tasks) con el
-checklist semanal (cl_tasks). Usada tanto al crear una tarea de calendario
+"""Logica compartida para sincronizar tareas de calendario (cld_user_tasks) con el
+checklist semanal (cl_week_tasks). Usada tanto al crear una tarea de calendario
 (ChecklistTaskService no aplica aca) como al crear una semana nueva.
 
 Zona horaria
@@ -228,7 +228,7 @@ def build_checklist_task_for_week(
     cld_task: CldTask, week: ChecklistWeek, tz: ZoneInfo
 ) -> ChecklistTask | None:
     """Materializa la ocurrencia de cld_task dentro de week como una fila de
-    cl_tasks, o None si esta tarea no cae dentro del rango de esa semana."""
+    cl_week_tasks, o None si esta tarea no cae dentro del rango de esa semana."""
     occurrence = occurrence_date_in_week(cld_task, week, tz)
     if occurrence is None:
         return None

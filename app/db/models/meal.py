@@ -1,4 +1,4 @@
-"""Modelo ORM de registros de comida (meals)."""
+"""Modelo ORM de registros de comida (user_meals)."""
 
 from datetime import UTC, datetime
 
@@ -9,14 +9,14 @@ from app.db.base_class import Base
 
 
 class Meal(Base):
-    __tablename__ = "meals"
-    __table_args__ = (Index("ix_meals_user_recorded_on", "user_id", "recorded_on"),)
+    __tablename__ = "user_meals"
+    __table_args__ = (Index("ix_user_meals_user_recorded_on", "user_id", "recorded_on"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     # Fecha y hora a la que corresponde la comida: hora de pared del usuario,
     # convertida a UTC por el service antes de guardar (ver
-    # app/services/cld_task_sync.to_utc, mismo contrato que cld_tasks).
+    # app/services/cld_task_sync.to_utc, mismo contrato que cld_user_tasks).
     recorded_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # DESAYUNO/MEDIA_MANANA/ALMUERZO/MEDIA_TARDE/CENA/EXTRA_NOCTURNO (ver MealType).
     meal_type: Mapped[str] = mapped_column(String(30), nullable=False)

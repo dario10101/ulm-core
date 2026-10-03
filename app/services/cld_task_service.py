@@ -1,4 +1,4 @@
-"""Logica de negocio de tareas de calendario (cld_tasks): tareas puntuales o
+"""Logica de negocio de tareas de calendario (cld_user_tasks): tareas puntuales o
 recurrentes, con sincronizacion opcional hacia el checklist semanal (sin
 tocar nunca el template). Las rutas dependen de esto, nunca del repository
 directamente.

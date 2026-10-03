@@ -1,5 +1,5 @@
 """Agregaciones de checklist para analytics (tendencias semanales/mensuales
-de semanas cerradas). Solo lee cl_week + cl_week_category_day_score, nunca
+de semanas cerradas). Solo lee cl_user_weeks + cl_week_category_day_score, nunca
 escribe (eso lo hace WeekService.close_week, una unica vez por semana)."""
 
 from collections import defaultdict

@@ -1,4 +1,4 @@
-"""Esquemas Pydantic de entrada/salida de tareas de calendario (cld_tasks)."""
+"""Esquemas Pydantic de entrada/salida de tareas de calendario (cld_user_tasks)."""
 
 from datetime import datetime
 from enum import Enum

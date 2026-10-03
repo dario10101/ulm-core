@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.routes import (
@@ -17,6 +17,7 @@ from app.api.routes import (
     expenses,
     habits,
     health,
+    incomes,
     meals,
     weights,
 )
@@ -69,6 +70,23 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+    """La base rechazo una escritura por un constraint (unicidad, FK...).
+
+    Los services validan antes de escribir y devuelven un error con mensaje
+    propio; llegar aca significa que algo se les escapo, tipicamente dos
+    requests simultaneos que pasaron la validacion a la vez. Es un conflicto
+    con el estado actual (409), no un fallo interno (500). El detalle del
+    constraint va al log, no al cliente.
+    """
+    logger.warning("Constraint violado en %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "La operacion choca con datos existentes. Recarga e intenta de nuevo."},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Ultimo recurso para cualquier error no previsto.
@@ -87,6 +105,7 @@ app.include_router(dummy.router, prefix=settings.api_prefix)
 app.include_router(weights.router, prefix=settings.api_prefix)
 app.include_router(meals.router, prefix=settings.api_prefix)
 app.include_router(expenses.router, prefix=settings.api_prefix)
+app.include_router(incomes.router, prefix=settings.api_prefix)
 app.include_router(checklists.router, prefix=settings.api_prefix)
 app.include_router(cld_tasks.router, prefix=settings.api_prefix)
 app.include_router(calendar_events.router, prefix=settings.api_prefix)

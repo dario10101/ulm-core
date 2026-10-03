@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models.finance import Category, PaymentMethod, Tag
+from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
 from app.schemas.finance import CatalogStatus
 
 
@@ -60,3 +60,35 @@ class SqlAlchemyFinanceCatalogRepository:
             .scalars()
             .all()
         )
+
+    def list_income_sources(self, user_id: int) -> Sequence[IncomeSource]:
+        return (
+            self._db.execute(
+                select(IncomeSource)
+                .where(IncomeSource.user_id == user_id)
+                .order_by(IncomeSource.id)
+            )
+            .scalars()
+            .all()
+        )
+
+    def list_income_subcategories(self, user_id: int) -> Sequence[IncomeSubcategory]:
+        # Por id y no por nombre: el formulario usa la primera como default
+        # (ej. "SALARIO BASE"), y ese orden lo decide quien la creo primero.
+        return (
+            self._db.execute(
+                select(IncomeSubcategory)
+                .where(IncomeSubcategory.user_id == user_id)
+                .order_by(IncomeSubcategory.id)
+            )
+            .scalars()
+            .all()
+        )
+
+    def get_income_source(self, user_id: int, source_id: int) -> IncomeSource | None:
+        source = self._db.get(IncomeSource, source_id)
+        return source if source is not None and source.user_id == user_id else None
+
+    def get_income_subcategory(self, user_id: int, subcategory_id: int) -> IncomeSubcategory | None:
+        subcategory = self._db.get(IncomeSubcategory, subcategory_id)
+        return subcategory if subcategory is not None and subcategory.user_id == user_id else None

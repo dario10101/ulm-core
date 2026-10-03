@@ -16,8 +16,8 @@ def _filter_conditions(
     user_id: int,
     start_date: date | None,
     end_date: date | None,
-    category_id: int | None,
-    payment_method_id: int | None,
+    category_ids: Sequence[int] | None,
+    payment_method_ids: Sequence[int] | None,
     tag_ids: Sequence[int] | None,
     min_amount: Decimal | None,
     max_amount: Decimal | None,
@@ -29,10 +29,10 @@ def _filter_conditions(
         conditions.append(Expense.recorded_on >= start_date)
     if end_date is not None:
         conditions.append(Expense.recorded_on <= end_date)
-    if category_id is not None:
-        conditions.append(Expense.category_id == category_id)
-    if payment_method_id is not None:
-        conditions.append(Expense.payment_method_id == payment_method_id)
+    if category_ids:
+        conditions.append(Expense.category_id.in_(category_ids))
+    if payment_method_ids:
+        conditions.append(Expense.payment_method_id.in_(payment_method_ids))
     if tag_ids:
         conditions.append(Expense.tags.any(Tag.id.in_(tag_ids)))
     if min_amount is not None:
@@ -78,8 +78,8 @@ class SqlAlchemyExpenseRepository:
         user_id: int,
         start_date: date | None,
         end_date: date | None,
-        category_id: int | None,
-        payment_method_id: int | None,
+        category_ids: Sequence[int] | None,
+        payment_method_ids: Sequence[int] | None,
         tag_ids: Sequence[int] | None,
         min_amount: Decimal | None,
         max_amount: Decimal | None,
@@ -90,8 +90,8 @@ class SqlAlchemyExpenseRepository:
             user_id=user_id,
             start_date=start_date,
             end_date=end_date,
-            category_id=category_id,
-            payment_method_id=payment_method_id,
+            category_ids=category_ids,
+            payment_method_ids=payment_method_ids,
             tag_ids=tag_ids,
             min_amount=min_amount,
             max_amount=max_amount,
@@ -119,8 +119,8 @@ class SqlAlchemyExpenseRepository:
         group_by: ExpenseGroupBy,
         start_date: date | None,
         end_date: date | None,
-        category_id: int | None,
-        payment_method_id: int | None,
+        category_ids: Sequence[int] | None,
+        payment_method_ids: Sequence[int] | None,
         tag_ids: Sequence[int] | None,
         min_amount: Decimal | None,
         max_amount: Decimal | None,
@@ -129,8 +129,8 @@ class SqlAlchemyExpenseRepository:
             user_id=user_id,
             start_date=start_date,
             end_date=end_date,
-            category_id=category_id,
-            payment_method_id=payment_method_id,
+            category_ids=category_ids,
+            payment_method_ids=payment_method_ids,
             tag_ids=tag_ids,
             min_amount=min_amount,
             max_amount=max_amount,

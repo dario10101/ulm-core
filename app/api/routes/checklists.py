@@ -39,7 +39,9 @@ from app.services.checklist_analytics_service import ChecklistAnalyticsService
 from app.services.checklist_task_service import ChecklistTaskService
 from app.services.errors import (
     CategoryInUseError,
+    CategoryNameTakenError,
     CategoryNotFoundError,
+    DuplicateCategoryNameError,
     InvalidWeekRangeError,
     TaskNotFoundError,
     TemplateTaskNotFoundError,
@@ -85,6 +87,19 @@ def replace_categories(
             detail=(
                 "No se pueden eliminar categorias con tareas asignadas: "
                 f"{', '.join(exc.category_names)}"
+            ),
+        )
+    except DuplicateCategoryNameError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Nombres de categoria repetidos: {', '.join(exc.names)}",
+        )
+    except CategoryNameTakenError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ya existe una categoria deshabilitada con ese nombre; "
+                f"reactivala en vez de crearla de nuevo: {', '.join(exc.names)}"
             ),
         )
 

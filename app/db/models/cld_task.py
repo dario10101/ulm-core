@@ -1,4 +1,4 @@
-"""Modelo ORM de tareas de calendario (cld_tasks): tareas puntuales o
+"""Modelo ORM de tareas de calendario (cld_user_tasks): tareas puntuales o
 recurrentes, con sincronizacion opcional hacia el checklist semanal."""
 
 from datetime import UTC, datetime
@@ -10,11 +10,11 @@ from app.db.base_class import Base
 
 
 class CldTask(Base):
-    __tablename__ = "cld_tasks"
+    __tablename__ = "cld_user_tasks"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    category_id: Mapped[int] = mapped_column(ForeignKey("cl_categories.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(ForeignKey("cl_user_categories.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     importance: Mapped[str] = mapped_column(String(20), nullable=False)
     notify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -32,7 +32,7 @@ class CldTask(Base):
     # (YEARLY); la hora siempre se respeta. Nulo si la tarea no se repite.
     repeat_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Si True, cada ocurrencia de esta tarea que caiga dentro del rango de una
-    # semana (actual o futura) se agrega a cl_tasks. El template nunca se toca.
+    # semana (actual o futura) se agrega a cl_week_tasks. El template nunca se toca.
     add_to_checklist: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Fechas ISO separadas por coma (ej. "2026-09-23,2026-10-07"): ocurrencias
     # puntuales de una serie recurrente que el usuario borro solo para ese dia

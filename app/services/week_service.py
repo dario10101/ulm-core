@@ -92,7 +92,7 @@ class WeekService:
         self._week_repository.flush()
 
         # El template no se modifica nunca al generar una semana: se copian sus
-        # tareas a cl_tasks, una fila por cada dia al que aplican.
+        # tareas a cl_week_tasks, una fila por cada dia al que aplican.
         for template_task in self._template_task_repository.list_by_user(user_id):
             for day in parse_days(template_task.day_of_week):
                 self._task_repository.add(
@@ -106,7 +106,7 @@ class WeekService:
                     )
                 )
 
-        # Tareas de calendario (cld_tasks) con add_to_checklist=True: se
+        # Tareas de calendario (cld_user_tasks) con add_to_checklist=True: se
         # re-evaluan en cada semana nueva, sin tocar el template tampoco aca.
         for cld_task in self._cld_task_repository.list_sync_enabled(user_id):
             checklist_task = build_checklist_task_for_week(cld_task, week, tz)
@@ -162,11 +162,11 @@ class WeekService:
         """Materializa cl_week_category_day_score al cerrar la semana: una
         semana cerrada es inmutable, asi que este es el unico momento en que
         vale la pena calcular este agregado (evita recalcularlo en cada
-        consulta de analytics, potencialmente escaneando anios de cl_tasks).
+        consulta de analytics, potencialmente escaneando anios de cl_week_tasks).
 
         Grano (categoria, dia): el mas fino que sigue siendo generico —
         cualquier rollup mas grueso (semanal, mensual, por dia de la semana)
-        sale de sumar estas pocas filas, sin volver a tocar cl_tasks."""
+        sale de sumar estas pocas filas, sin volver a tocar cl_week_tasks."""
         totals: dict[tuple[int, int], dict[str, int]] = defaultdict(
             lambda: {"score": 0, "points_possible": 0}
         )

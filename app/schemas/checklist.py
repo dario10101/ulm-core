@@ -30,7 +30,14 @@ class CategoryWrite(BaseModel):
     """
 
     id: int | None = None
+    # Sin espacios en los bordes: "Salud " y "Salud" chocarian contra el
+    # indice unico de nombre sin que el usuario vea la diferencia.
     name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class CategoriesReplace(BaseModel):

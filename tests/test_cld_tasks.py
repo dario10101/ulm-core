@@ -1,4 +1,4 @@
-"""Pruebas de tareas de calendario (cld_tasks): creacion, validacion de
+"""Pruebas de tareas de calendario (cld_user_tasks): creacion, validacion de
 fechas, y sincronizacion opcional con el checklist semanal (sin tocar nunca
 el template).
 

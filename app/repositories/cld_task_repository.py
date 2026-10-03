@@ -1,4 +1,4 @@
-"""Interfaz (Protocol) del acceso a datos de tareas de calendario (cld_tasks)."""
+"""Interfaz (Protocol) del acceso a datos de tareas de calendario (cld_user_tasks)."""
 
 from collections.abc import Sequence
 from typing import Protocol

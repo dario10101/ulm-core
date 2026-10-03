@@ -8,6 +8,7 @@ obligado a tocar tambien las rutas.
 Ahora los services devuelven esquemas y la ruta no sabe que existe SQLAlchemy.
 """
 
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from app.db.models.checklist import (
@@ -17,7 +18,7 @@ from app.db.models.checklist import (
     ChecklistWeek,
 )
 from app.db.models.cld_task import CldTask
-from app.db.models.finance import Expense
+from app.db.models.finance import DirectIncome, Expense, InterestIncome
 from app.db.models.meal import Meal
 from app.db.models.weight import WeightRecord
 from app.schemas.checklist import (
@@ -31,7 +32,15 @@ from app.schemas.checklist import (
 )
 from app.schemas.cld_task import CldTaskOccurrenceRead, CldTaskRead, RepeatMode
 from app.schemas.finance import CategoryRead as FinanceCategoryRead
-from app.schemas.finance import ExpenseRead, PaymentMethodRead, TagRead
+from app.schemas.finance import (
+    DirectIncomeRead,
+    ExpenseRead,
+    IncomeSourceRead,
+    IncomeSubcategoryRead,
+    InterestIncomeRead,
+    PaymentMethodRead,
+    TagRead,
+)
 from app.schemas.meal import MealRead, MealType
 from app.schemas.weight import WeightRead
 from app.services.cld_task_sync import Occurrence, to_local
@@ -151,4 +160,44 @@ def meal_to_read(meal: Meal, tz: ZoneInfo) -> MealRead:
         note=meal.note,
         created_at=meal.created_at,
         updated_at=meal.updated_at,
+    )
+
+
+def direct_income_to_read(record: DirectIncome) -> DirectIncomeRead:
+    """source/subcategory/tags ya vienen resueltos (lazy="joined"/"selectin"),
+    mismo criterio que expense_to_read."""
+    return DirectIncomeRead(
+        id=record.id,
+        user_id=record.user_id,
+        amount=float(record.amount),
+        recorded_on=record.recorded_on,
+        note=record.note,
+        source=IncomeSourceRead.model_validate(record.source),
+        subcategory=IncomeSubcategoryRead.model_validate(record.subcategory),
+        tags=[TagRead.model_validate(tag) for tag in record.tags],
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _optional_float(value: Decimal | None) -> float | None:
+    return float(value) if value is not None else None
+
+
+def interest_income_to_read(record: InterestIncome) -> InterestIncomeRead:
+    return InterestIncomeRead(
+        id=record.id,
+        user_id=record.user_id,
+        amount=float(record.amount),
+        recorded_on=record.recorded_on,
+        start_of_month_amount=_optional_float(record.start_of_month_amount),
+        end_of_month_amount=_optional_float(record.end_of_month_amount),
+        deposits_amount=float(record.deposits_amount),
+        withdrawals_amount=float(record.withdrawals_amount),
+        note=record.note,
+        source=IncomeSourceRead.model_validate(record.source),
+        subcategory=IncomeSubcategoryRead.model_validate(record.subcategory),
+        tags=[TagRead.model_validate(tag) for tag in record.tags],
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )

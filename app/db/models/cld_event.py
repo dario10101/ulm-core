@@ -12,7 +12,7 @@ from app.db.base_class import Base
 class CldEvent(Base):
     __tablename__ = "cld_events"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     # Ej. "HOLIDAY" para festivos; deja lugar a otros tipos de evento general.
     code: Mapped[str] = mapped_column(String(30), nullable=False)
     first_day: Mapped[date] = mapped_column(Date, nullable=False)

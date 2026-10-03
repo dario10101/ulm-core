@@ -1,4 +1,4 @@
-"""Rutas de tareas de calendario (cld_tasks). Solo hablan con la capa de
+"""Rutas de tareas de calendario (cld_user_tasks). Solo hablan con la capa de
 Service (nunca con el repository ni con la sesion de base de datos)."""
 
 from datetime import date

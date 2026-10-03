@@ -7,7 +7,14 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_current_user_id, get_weight_service
-from app.schemas.weight import WeightCreate, WeightPage, WeightRead, WeightUpdate
+from app.schemas.weight import (
+    WeightCreate,
+    WeightPage,
+    WeightRead,
+    WeightSummaryGroupBy,
+    WeightSummaryRead,
+    WeightUpdate,
+)
 from app.services.errors import WeightNotFoundError
 from app.services.weight_service import WeightService
 
@@ -47,6 +54,20 @@ def list_weights(
     )
     return WeightPage(
         items=items, total=total, page=page, page_size=page_size, total_pages=total_pages
+    )
+
+
+@router.get("/summary", response_model=WeightSummaryRead)
+def summarize_weights(
+    group_by: WeightSummaryGroupBy = Query(),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user_id: int = Depends(get_current_user_id),
+    service: WeightService = Depends(get_weight_service),
+) -> WeightSummaryRead:
+    """Peso promedio por mes o por dia (para los graficos de analytics)."""
+    return service.summarize_weights(
+        user_id=user_id, group_by=group_by, start_date=start_date, end_date=end_date
     )
 
 

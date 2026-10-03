@@ -14,6 +14,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.models.finance import DirectIncome
 from app.db.models.user import User
 from app.db.session import get_db
 from app.repositories.category_repository import CategoryRepository
@@ -22,6 +23,8 @@ from app.repositories.cld_task_repository import CldTaskRepository
 from app.repositories.cld_user_event_repository import CldUserEventRepository
 from app.repositories.expense_repository import ExpenseRepository
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
+from app.repositories.income_repository import IncomeRepository, InterestIncomeRepository
+from app.repositories.income_summary_repository import IncomeSummaryRepository
 from app.repositories.meal_repository import MealRepository
 from app.repositories.sqlalchemy_category_repository import SqlAlchemyCategoryRepository
 from app.repositories.sqlalchemy_cld_event_repository import SqlAlchemyCldEventRepository
@@ -32,6 +35,13 @@ from app.repositories.sqlalchemy_cld_user_event_repository import (
 from app.repositories.sqlalchemy_expense_repository import SqlAlchemyExpenseRepository
 from app.repositories.sqlalchemy_finance_catalog_repository import (
     SqlAlchemyFinanceCatalogRepository,
+)
+from app.repositories.sqlalchemy_income_repository import (
+    SqlAlchemyIncomeRepository,
+    SqlAlchemyInterestIncomeRepository,
+)
+from app.repositories.sqlalchemy_income_summary_repository import (
+    SqlAlchemyIncomeSummaryRepository,
 )
 from app.repositories.sqlalchemy_meal_repository import SqlAlchemyMealRepository
 from app.repositories.sqlalchemy_task_repository import SqlAlchemyTaskRepository
@@ -55,6 +65,8 @@ from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
 from app.services.expense_service import ExpenseService
 from app.services.finance_catalog_service import FinanceCatalogService
+from app.services.income_service import IncomeService
+from app.services.income_summary_service import IncomeSummaryService
 from app.services.meal_service import MealService
 from app.services.template_task_service import TemplateTaskService
 from app.services.week_service import WeekService
@@ -116,6 +128,34 @@ def get_expense_service(
     catalog_repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
 ) -> ExpenseService:
     return ExpenseService(expense_repository, catalog_repository)
+
+
+def get_direct_income_repository(
+    db: Session = Depends(get_db),
+) -> IncomeRepository[DirectIncome]:
+    return SqlAlchemyIncomeRepository(db, DirectIncome)
+
+
+def get_interest_income_repository(db: Session = Depends(get_db)) -> InterestIncomeRepository:
+    return SqlAlchemyInterestIncomeRepository(db)
+
+
+def get_income_service(
+    direct_repository: IncomeRepository[DirectIncome] = Depends(get_direct_income_repository),
+    interest_repository: InterestIncomeRepository = Depends(get_interest_income_repository),
+    catalog_repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
+) -> IncomeService:
+    return IncomeService(direct_repository, interest_repository, catalog_repository)
+
+
+def get_income_summary_repository(db: Session = Depends(get_db)) -> IncomeSummaryRepository:
+    return SqlAlchemyIncomeSummaryRepository(db)
+
+
+def get_income_summary_service(
+    repository: IncomeSummaryRepository = Depends(get_income_summary_repository),
+) -> IncomeSummaryService:
+    return IncomeSummaryService(repository)
 
 
 def get_category_repository(db: Session = Depends(get_db)) -> CategoryRepository:

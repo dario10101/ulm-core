@@ -319,13 +319,19 @@ def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(d
         },
     )
 
-    by_category = client.get("/api/v1/expenses/", params={"category_id": category_id}).json()
+    by_category = client.get("/api/v1/expenses/", params={"category_ids": [category_id]}).json()
     assert [item["name"] for item in by_category["items"]] == ["Mercado"]
 
     by_payment_method = client.get(
-        "/api/v1/expenses/", params={"payment_method_id": payment_method_id}
+        "/api/v1/expenses/", params={"payment_method_ids": [payment_method_id]}
     ).json()
     assert [item["name"] for item in by_payment_method["items"]] == ["Mercado"]
+
+    # Multi-seleccion: cualquiera de los ids coincide.
+    by_both_categories = client.get(
+        "/api/v1/expenses/", params={"category_ids": [category_id, other_category.id]}
+    ).json()
+    assert by_both_categories["total"] == 2
 
     by_tag = client.get("/api/v1/expenses/", params={"tag_ids": [tag_id]}).json()
     assert [item["name"] for item in by_tag["items"]] == ["Mercado"]
@@ -337,13 +343,13 @@ def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(d
 
     combined = client.get(
         "/api/v1/expenses/",
-        params={"category_id": category_id, "payment_method_id": payment_method_id},
+        params={"category_ids": [category_id], "payment_method_ids": [payment_method_id]},
     ).json()
     assert combined["total"] == 1
 
     matches_neither = client.get(
         "/api/v1/expenses/",
-        params={"category_id": category_id, "payment_method_id": other_payment_method.id},
+        params={"category_ids": [category_id], "payment_method_ids": [other_payment_method.id]},
     ).json()
     assert matches_neither["total"] == 0
 
@@ -426,7 +432,7 @@ def test_summarize_expenses_groups_by_each_dimension(db_session):
     assert [(b["key"], b["count"]) for b in by_year["buckets"]] == [("2025", 1), ("2026", 2)]
 
     # Los filtros son los mismos del listado.
-    filtered = summary("category", start_date="2026-01-01", category_id=category_id)
+    filtered = summary("category", start_date="2026-01-01", category_ids=[category_id])
     assert filtered["total"] == 20000
     assert [b["label"] for b in filtered["buckets"]] == ["Groceries"]
 

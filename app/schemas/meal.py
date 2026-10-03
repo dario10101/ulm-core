@@ -19,7 +19,7 @@ def _reject_aware(value: datetime) -> datetime:
     """La API recibe hora de pared del usuario, sin offset (ej.
     "2026-09-26T13:30:00"): es el backend quien le adjunta la zona del
     usuario y la convierte a UTC para guardarla (mismo contrato que
-    cld_tasks, ver app/services/cld_task_sync.py)."""
+    cld_user_tasks, ver app/services/cld_task_sync.py)."""
     if value.tzinfo is not None:
         raise ValueError("Enviar la fecha en hora local sin zona horaria (ej. 2026-09-26T13:30:00)")
     return value

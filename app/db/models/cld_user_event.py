@@ -12,9 +12,9 @@ from app.db.base_class import Base
 class CldUserEvent(Base):
     __tablename__ = "cld_user_events"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    category_id: Mapped[int] = mapped_column(ForeignKey("cl_categories.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(ForeignKey("cl_user_categories.id"), nullable=False)
     # Ej. "TRAVEL", "VACATION", "BIRTHDAY"; mismo proposito que CldEvent.code.
     code: Mapped[str] = mapped_column(String(30), nullable=False)
     first_day: Mapped[date] = mapped_column(Date, nullable=False)

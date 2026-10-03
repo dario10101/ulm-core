@@ -1,10 +1,17 @@
 """Logica de negocio de categorias de checklist. Las rutas dependen de esto,
 nunca del repository directamente."""
 
+from collections.abc import Sequence
+
 from app.db.models.checklist import ChecklistCategory
 from app.repositories.category_repository import CategoryRepository
-from app.schemas.checklist import CategoryRead, CategoryWrite
-from app.services.errors import CategoryInUseError, CategoryNotFoundError
+from app.schemas.checklist import CategoryRead, CategoryStatus, CategoryWrite
+from app.services.errors import (
+    CategoryInUseError,
+    CategoryNameTakenError,
+    CategoryNotFoundError,
+    DuplicateCategoryNameError,
+)
 from app.services.mappers import category_to_read
 
 
@@ -42,7 +49,8 @@ class CategoryService:
         El orden de `items` define la prioridad (indice + 1). Una categoria
         existente que no aparece en `items` se interpreta como eliminada.
         """
-        existing = {c.id: c for c in self._repository.list_by_user(user_id)}
+        all_categories = self._repository.list_all_by_user(user_id)
+        existing = {c.id: c for c in all_categories if c.status == CategoryStatus.ENABLED.value}
         payload_ids = {item.id for item in items if item.id is not None}
 
         unknown_ids = payload_ids - existing.keys()
@@ -58,8 +66,25 @@ class CategoryService:
         if in_use:
             raise CategoryInUseError(in_use)
 
+        self._check_names(items, all_categories, to_delete_ids)
+
         for category_id in to_delete_ids:
             self._repository.disable(existing[category_id])
+
+        # Renombres en dos pasos. El indice unico de nombre se valida fila por
+        # fila, asi que intercambiar dos nombres (A->"B", B->"A") choca en el
+        # primer UPDATE contra el nombre que la otra todavia tiene. Pasar
+        # primero por un nombre temporal (unico por id) libera todos los
+        # nombres viejos antes de asignar los nuevos.
+        renamed = [
+            existing[item.id]
+            for item in items
+            if item.id is not None and existing[item.id].name != item.name
+        ]
+        if renamed:
+            for category in renamed:
+                category.name = f"__renaming_{category.id}"
+            self._repository.flush()
 
         result: list[ChecklistCategory] = []
         for index, item in enumerate(items):
@@ -79,3 +104,33 @@ class CategoryService:
 
         result.sort(key=lambda c: c.priority)
         return [category_to_read(c) for c in result]
+
+    @staticmethod
+    def _check_names(
+        items: list[CategoryWrite],
+        all_categories: Sequence[ChecklistCategory],
+        to_delete_ids: set[int],
+    ) -> None:
+        """Valida antes de escribir lo mismo que el indice unico de la base
+        (usuario + lower(name), contando DISABLED), para responder con un
+        error que diga que nombre choca en vez de un IntegrityError."""
+        seen: set[str] = set()
+        duplicated: list[str] = []
+        for item in items:
+            key = item.name.lower()
+            if key in seen and item.name not in duplicated:
+                duplicated.append(item.name)
+            seen.add(key)
+        if duplicated:
+            raise DuplicateCategoryNameError(duplicated)
+
+        # Nombres que quedan ocupados por filas que no estan en el payload: las
+        # ya deshabilitadas y las que este mismo guardado deshabilita.
+        inactive = {
+            c.name.lower(): c.name
+            for c in all_categories
+            if c.status != CategoryStatus.ENABLED.value or c.id in to_delete_ids
+        }
+        taken = [item.name for item in items if item.name.lower() in inactive]
+        if taken:
+            raise CategoryNameTakenError(taken)

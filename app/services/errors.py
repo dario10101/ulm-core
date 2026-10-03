@@ -58,6 +58,25 @@ class CategoryInUseError(ConflictError):
         super().__init__(f"Categorias en uso: {', '.join(category_names)}")
 
 
+class DuplicateCategoryNameError(ValidationError):
+    """El mismo guardado trae dos categorias con el mismo nombre (sin
+    distinguir mayusculas)."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+        super().__init__(f"Nombres repetidos: {', '.join(names)}")
+
+
+class CategoryNameTakenError(ConflictError):
+    """El nombre ya lo usa una categoria DISABLED del usuario (o una que este
+    mismo guardado deshabilita). Los nombres son unicos contando las
+    deshabilitadas, para que analytics no parta una misma categoria en dos."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+        super().__init__(f"Nombres usados por categorias deshabilitadas: {', '.join(names)}")
+
+
 # --- Semanas de checklist ---
 
 
@@ -163,3 +182,35 @@ class TagNotFoundError(NotFoundError):
     def __init__(self, tag_ids: set[int]) -> None:
         self.tag_ids = tag_ids
         super().__init__(f"Tags inexistentes: {sorted(self.tag_ids)}")
+
+
+# --- Finanzas: ingresos ---
+
+
+class IncomeNotFoundError(NotFoundError):
+    """El registro de ingreso no existe (o no es del usuario)."""
+
+
+class IncomeSourceNotFoundError(NotFoundError):
+    """La fuente referenciada no existe, no es del usuario o no aplica a ese
+    tipo de ingreso (para el cliente es lo mismo: no es una opcion valida)."""
+
+    def __init__(self, source_id: int) -> None:
+        self.source_id = source_id
+        super().__init__(f"Fuente de ingreso inexistente para este tipo: {source_id}")
+
+
+class IncomeSubcategoryNotFoundError(NotFoundError):
+    """La subcategoria no existe, no es del usuario o no pertenece a la fuente
+    elegida."""
+
+    def __init__(self, subcategory_id: int) -> None:
+        self.subcategory_id = subcategory_id
+        super().__init__(f"Subcategoria inexistente para esa fuente: {subcategory_id}")
+
+
+class InterestPeriodTakenError(ConflictError):
+    """Ya hay un registro de intereses para esa fuente en ese mes."""
+
+    def __init__(self) -> None:
+        super().__init__("Ya existe un registro de intereses para esa fuente en ese mes")

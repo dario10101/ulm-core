@@ -127,3 +127,64 @@ def test_another_users_weight_is_not_listed(db_session):
     body = client.get("/api/v1/weights/").json()
 
     assert body["total"] == 0
+
+
+def _post_weights(records):
+    for day, value in records:
+        client.post("/api/v1/weights/", json={"weight_kg": value, "recorded_on": day})
+
+
+def test_summary_by_month_averages_each_month_within_range():
+    _post_weights(
+        [
+            ("2025-12-30", 80.0),
+            ("2026-01-05", 74.0),
+            ("2026-01-20", 75.0),
+            ("2026-03-02", 73.5),
+        ]
+    )
+    response = client.get(
+        "/api/v1/weights/summary",
+        params={"group_by": "month", "start_date": "2026-01-01", "end_date": "2026-12-31"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["buckets"] == [
+        {"key": "2026-01", "average_kg": 74.5, "count": 2},
+        {"key": "2026-03", "average_kg": 73.5, "count": 1},
+    ]
+    assert body["count"] == 3
+    # Promedio de los 3 pesajes, no de los promedios mensuales.
+    assert body["average_kg"] == round((74.0 + 75.0 + 73.5) / 3, 2)
+    # Los años disponibles no dependen del rango pedido.
+    assert body["available_years"] == [2026, 2025]
+
+
+def test_summary_by_day_averages_multiple_weigh_ins_of_the_same_day():
+    _post_weights([("2026-08-01", 72.0), ("2026-08-01", 73.0), ("2026-08-03", 72.4)])
+    response = client.get(
+        "/api/v1/weights/summary",
+        params={"group_by": "day", "start_date": "2026-08-01", "end_date": "2026-08-31"},
+    )
+    assert response.status_code == 200
+    assert response.json()["buckets"] == [
+        {"key": "2026-08-01", "average_kg": 72.5, "count": 2},
+        {"key": "2026-08-03", "average_kg": 72.4, "count": 1},
+    ]
+
+
+def test_summary_without_records_is_empty():
+    body = client.get("/api/v1/weights/summary", params={"group_by": "month"}).json()
+    assert body == {"buckets": [], "average_kg": None, "count": 0, "available_years": []}
+
+
+def test_summary_rejects_unknown_group_by():
+    response = client.get("/api/v1/weights/summary", params={"group_by": "week"})
+    assert response.status_code == 422
+
+
+def test_summary_ignores_another_users_weights(db_session):
+    _other_users_weight(db_session)
+    body = client.get("/api/v1/weights/summary", params={"group_by": "month"}).json()
+    assert body["count"] == 0
+    assert body["available_years"] == []

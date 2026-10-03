@@ -28,6 +28,21 @@ class WeightRepository(Protocol):
         limit: int,
     ) -> tuple[Sequence[WeightRecord], int]: ...
 
+    def summarize(
+        self,
+        *,
+        user_id: int,
+        group_by: str,
+        start_date: date | None,
+        end_date: date | None,
+    ) -> Sequence[tuple[str, Decimal, int]]:
+        """(key, promedio_kg, cantidad) por periodo, ordenado por key."""
+        ...
+
+    def list_years(self, *, user_id: int) -> Sequence[int]:
+        """Años con al menos un registro, de mas reciente a mas antiguo."""
+        ...
+
     def get(self, weight_id: int) -> WeightRecord | None: ...
 
     def update(

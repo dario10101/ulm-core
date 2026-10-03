@@ -2,11 +2,11 @@
 poder validar el grafico de analytics end-to-end:
 
 1. Backfill de cl_week_category_day_score para la semana ya cerrada que
-   exista hoy, calculado desde sus cl_tasks reales (no es data inventada).
+   exista hoy, calculado desde sus cl_week_tasks reales (no es data inventada).
 2. Semanas sintéticas cerradas desde el 1 de enero del anio de esa semana
    hasta el dia justo antes de que empiece (encadenadas, sin overlap).
    Incluye:
-   - Un hueco real (una semana sin fila en cl_week: "no se le hizo tracking").
+   - Un hueco real (una semana sin fila en cl_user_weeks: "no se le hizo tracking").
    - La categoria "Hobbies" solo tiene datos en las primeras semanas del
      anio y despues se deja de usar; al final del script se deshabilita
      (status=DISABLED) para validar que su historia sigue apareciendo en
@@ -25,7 +25,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.db.models import (
-    user as user_model,  # noqa: F401 -- registra 'users' para resolver el FK de cl_week
+    user as user_model,  # noqa: F401 -- registra 'users' para resolver el FK de cl_user_weeks
 )
 from app.db.models.checklist import (
     ChecklistCategory,
@@ -97,7 +97,7 @@ def build_synthetic_week_rows(
 
 def backfill_existing_closed_week(session, week: ChecklistWeek) -> None:
     """Calcula cl_week_category_day_score para una semana YA cerrada antes de
-    que existiera esta tabla, desde sus cl_tasks reales."""
+    que existiera esta tabla, desde sus cl_week_tasks reales."""
     tasks = (
         session.execute(select(ChecklistTask).where(ChecklistTask.cl_week_id == week.id))
         .scalars()
