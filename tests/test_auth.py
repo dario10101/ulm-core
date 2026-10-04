@@ -144,6 +144,7 @@ def test_invited_user_links_on_first_login(browser, google, db_session):
         "email": "ruben@example.com",
         "avatar_url": "https://example.com/avatar.png",
         "timezone": "Europe/Madrid",
+        "username": None,
     }
     identity = db_session.query(UserIdentity).one()
     assert (identity.user_id, identity.provider, identity.provider_subject) == (

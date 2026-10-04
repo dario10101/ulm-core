@@ -211,11 +211,13 @@ def _private_routes() -> list[APIRoute]:
 def test_every_private_route_except_me_requires_a_permission():
     """Si alguien monta un router nuevo con permiso None, o una ruta suelta,
     esto falla: un modulo no queda abierto a cualquier usuario logueado.
-    Exigir admin (parametros del sistema) cuenta como permiso."""
+    Exigir admin (parametros del sistema) cuenta como permiso. /me y sus
+    subrutas (/me/username) son de la cuenta, no de un modulo."""
     missing = [
         route.path
         for route in _private_routes()
         if route.path != f"{API}/me"
+        and not route.path.startswith(f"{API}/me/")
         and not _required_permissions(route.dependant)
         and not _requires_admin(route.dependant)
     ]

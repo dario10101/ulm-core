@@ -26,6 +26,9 @@ class User(Base):
         # persona. Indice y no constraint por la expresion (mismo caso que
         # uq_cl_user_categories_user_id_name).
         Index("uq_users_email", func.lower(text("email")), unique=True),
+        # Mismo criterio que el email. Postgres no compara NULL con NULL, asi
+        # que los usuarios sin username no chocan entre si.
+        Index("uq_users_username", func.lower(text("username")), unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -39,6 +42,10 @@ class User(Base):
         String(64), nullable=False, default="America/Bogota", server_default="America/Bogota"
     )
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Nombre publico unico (URL del blog: /blog/<username>) y futuro usuario
+    # del login con contraseña. Nulo hasta que el usuario lo crea; despues no
+    # cambia (ver app/services/username.py). Se guarda ya normalizado.
+    username: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Deshabilitar en vez de borrar: corta el acceso y conserva los datos.

@@ -2,8 +2,9 @@
 
 Dos niveles por dominio: el base (`finances`) habilita registros, analytics y
 parametros del dominio; el avanzado (`finances.ai`) habilita el analisis con
-IA y exige el base. Un dominio sin implementar puede tener permisos asignados
-desde ya: simplemente ningun router los pide todavia.
+IA y exige el base. Un dominio puede no tener avanzado (`blog`). Un dominio
+sin implementar puede tener permisos asignados desde ya: simplemente ningun
+router los pide todavia.
 
 El admin NO es un permiso guardado en la base: sale de ADMIN_EMAILS (ver
 config.py). Asi nadie puede volverse admin desde la API, la UI ni un script con
@@ -35,6 +36,9 @@ class Permission(str, Enum):
     # calendario sincroniza tareas al checklist.
     PLANNING = "planning"
     PLANNING_AI = "planning.ai"
+    # Gestionar el blog propio; sin avanzado `.ai` por ahora. Ver un blog
+    # publico no exige permiso, pero solo existe si su dueño tiene este.
+    BLOG = "blog"
 
     @property
     def base(self) -> "Permission | None":

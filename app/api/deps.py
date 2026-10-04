@@ -72,6 +72,7 @@ from app.repositories.week_category_day_score_repository import WeekCategoryDayS
 from app.repositories.week_repository import WeekRepository
 from app.repositories.weight_repository import WeightRepository
 from app.services.auth_service import AuthService
+from app.services.blog_service import BlogService
 from app.services.calendar_admin_service import CalendarAdminService
 from app.services.calendar_event_service import CalendarEventService
 from app.services.category_service import CategoryService
@@ -132,6 +133,13 @@ def get_auth_service(
     google: GoogleOAuthClient = Depends(get_google_oauth_client),
 ) -> AuthService:
     return AuthService(users, sessions, user_admin, google)
+
+
+def get_blog_service(
+    users: UserRepository = Depends(get_user_repository),
+    user_admin: UserAdminService = Depends(get_user_admin_service),
+) -> BlogService:
+    return BlogService(users, user_admin)
 
 
 def get_current_user(

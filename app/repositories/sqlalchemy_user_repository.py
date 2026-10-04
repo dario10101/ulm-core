@@ -22,6 +22,12 @@ class SqlAlchemyUserRepository:
             select(User).where(func.lower(User.email) == email)
         ).scalar_one_or_none()
 
+    def get_by_username(self, username: str) -> User | None:
+        # Misma expresion que el indice unico uq_users_username.
+        return self._db.execute(
+            select(User).where(func.lower(User.username) == username)
+        ).scalar_one_or_none()
+
     def list_all(self) -> Sequence[User]:
         return self._db.execute(select(User).order_by(User.id)).scalars().all()
 

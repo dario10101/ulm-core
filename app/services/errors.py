@@ -271,6 +271,35 @@ class EmailTakenError(ConflictError):
         super().__init__(f"Ya existe un usuario con el email {email}")
 
 
+class InvalidUsernameError(ValidationError):
+    """El username no cumple el formato o esta reservado (ver
+    app/services/username.py). El mensaje dice cual regla fallo."""
+
+
+class UsernameTakenError(ConflictError):
+    """Otro usuario ya tiene ese username (sin distinguir mayusculas)."""
+
+    def __init__(self, username: str) -> None:
+        self.username = username
+        super().__init__(f"El username '{username}' ya esta en uso")
+
+
+class UsernameAlreadySetError(ConflictError):
+    """El usuario ya tiene username y no se cambia: romperia los links a su
+    blog y liberaria el nombre para que otro lo tome (suplantacion)."""
+
+    def __init__(self) -> None:
+        super().__init__("Ya tienes un username y no se puede cambiar")
+
+
+# --- Blog ---
+
+
+class BlogNotFoundError(NotFoundError):
+    """No hay blog publico con ese username: no existe, esta deshabilitado o
+    su dueño no tiene el permiso `blog`. Para el visitante es lo mismo."""
+
+
 class LoginError(DomainError):
     """Raiz de los motivos por los que un login no termina en sesion. Cada
     subclase tiene un `code` que la ruta manda al front (/login?error=code)

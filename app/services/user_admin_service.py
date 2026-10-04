@@ -22,6 +22,8 @@ from app.services.errors import (
     EmailTakenError,
     MissingBasePermissionError,
     UnknownPermissionError,
+    UsernameAlreadySetError,
+    UsernameTakenError,
     UserNotFoundError,
 )
 from app.services.permissions import (
@@ -30,6 +32,7 @@ from app.services.permissions import (
     is_admin_email,
     known_permissions,
 )
+from app.services.username import validate_username
 
 
 def normalize_email(email: str) -> str:
@@ -92,6 +95,21 @@ class UserAdminService:
         if other is not None and other.id != user.id:
             raise EmailTakenError(email)
         user.email = email
+        self._users.flush()
+        return user
+
+    def set_username(self, user_id: int, value: str) -> User:
+        """Crea el username del usuario. Una sola vez: despues no cambia (ver
+        UsernameAlreadySetError). La consulta previa da un mensaje claro; la
+        garantia real ante dos requests simultaneos es el indice unico, cuyo
+        IntegrityError tambien termina en 409 (ver app/main.py)."""
+        user = self._get(user_id)
+        if user.username is not None:
+            raise UsernameAlreadySetError()
+        username = validate_username(value)
+        if self._users.get_by_username(username) is not None:
+            raise UsernameTakenError(username)
+        user.username = username
         self._users.flush()
         return user
 

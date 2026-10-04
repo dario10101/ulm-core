@@ -21,6 +21,7 @@ from app.api.routes import (
     incomes,
     me,
     meals,
+    public_blogs,
     system_params,
     weights,
 )
@@ -97,7 +98,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # Rutas sin sesion. Cualquier otra exige login: se monta con get_current_user
 # a nivel de router, asi un endpoint nuevo queda protegido sin acordarse de
 # nada. tests/test_auth.py falla si aparece una ruta privada sin esa dependencia.
-PUBLIC_ROUTERS = (health.router, auth.router)
+# Los blogs publicos tambien: los lee cualquiera (ver app/schemas/blog.py).
+PUBLIC_ROUTERS = (health.router, auth.router, public_blogs.router)
 
 # Exigencia de los parametros globales del sistema y de la administracion de
 # usuarios: el admin (ADMIN_EMAILS), no un permiso de dominio.

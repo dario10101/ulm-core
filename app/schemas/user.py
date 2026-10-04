@@ -21,8 +21,18 @@ class MeRead(BaseModel):
     email: str
     avatar_url: str | None
     timezone: str
+    # Nulo hasta que el usuario lo crea (Settings -> General).
+    username: str | None
     is_admin: bool
     permissions: list[str]
+
+
+class UsernameWrite(BaseModel):
+    """El formato se valida en el service (app/services/username.py), no aca:
+    es regla de dominio y la reutilizara el login con contraseña. El limite
+    solo corta entradas absurdas antes de procesarlas."""
+
+    username: str = Field(max_length=64)
 
 
 class AccessInfoRead(BaseModel):
