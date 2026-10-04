@@ -1,13 +1,15 @@
 """Administracion de usuarios: invitar, cambiar email, deshabilitar, permisos.
 
 Es el unico lugar que crea filas en `users` (ver `register`): lo usan el
-script scripts/manage_users.py, el login en modo `open` y, mas adelante, la
-pantalla de administracion. Un solo camino de creacion evita que cada entrada
-aplique reglas distintas (normalizacion del email, unicidad, defaults).
+script scripts/manage_users.py, el login en modo `open` y la pantalla de
+administracion (Settings -> Users, rutas /admin/users). Un solo camino de
+creacion evita que cada entrada aplique reglas distintas (normalizacion del
+email, unicidad, defaults).
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import settings
@@ -47,6 +49,9 @@ def valid_timezone(name: str | None) -> str | None:
     except (ZoneInfoNotFoundError, ValueError):
         return None
     return name
+
+
+UserStatus = Literal["invited", "active", "disabled"]
 
 
 class UserAdminService:
@@ -117,6 +122,12 @@ class UserAdminService:
     def has_logged_in(self, user_id: int) -> bool:
         return self._users.has_identities(user_id)
 
+    def status(self, user: User) -> UserStatus:
+        """`invited` mientras no haya entrado nunca (sin identidad vinculada)."""
+        if user.disabled_at is not None:
+            return "disabled"
+        return "active" if self.has_logged_in(user.id) else "invited"
+
     # --- Permisos ---
 
     @staticmethod
@@ -136,6 +147,29 @@ class UserAdminService:
         if base is not None and base.value not in self._permissions.list_for_user(user.id):
             raise MissingBasePermissionError(permission.value, base.value)
         self._permissions.add(user.id, permission.value, granted_by=granted_by)
+        return self.effective_permissions(user)
+
+    def set_permissions(
+        self, user_id: int, values: Iterable[str], *, granted_by: int | None
+    ) -> frozenset[Permission]:
+        """Reemplaza el conjunto completo (lo que manda la pantalla de admin).
+        Solo toca lo que cambia: un permiso que sigue conserva su granted_by y
+        granted_at. A diferencia de `revoke`, no hay cascada: un `.ai` sin su
+        base en el mismo conjunto es un error, no algo que se corrija solo."""
+        user = self._get_editable(user_id)
+        wanted = {self._parse(value) for value in values}
+        for permission in wanted:
+            base = permission.base
+            if base is not None and base not in wanted:
+                raise MissingBasePermissionError(permission.value, base.value)
+
+        current = self._permissions.list_for_user(user.id)
+        wanted_values = {permission.value for permission in wanted}
+        # Tambien limpia valores guardados que ya no estan en el catalogo.
+        for value in current - wanted_values:
+            self._permissions.remove(user.id, value)
+        for value in sorted(wanted_values - current):
+            self._permissions.add(user.id, value, granted_by=granted_by)
         return self.effective_permissions(user)
 
     def revoke(self, user_id: int, value: str) -> frozenset[Permission]:
@@ -161,6 +195,9 @@ class UserAdminService:
                 f"{user.email} es admin por ADMIN_EMAILS: no se edita por API ni consola"
             )
         return user
+
+    def get(self, user_id: int) -> User:
+        return self._get(user_id)
 
     def _get(self, user_id: int) -> User:
         user = self._users.get(user_id)

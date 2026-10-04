@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_current_user, require, require_admin
 from app.api.routes import (
+    admin_users,
     auth,
     calendar_events,
     checklists,
@@ -98,8 +99,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # nada. tests/test_auth.py falla si aparece una ruta privada sin esa dependencia.
 PUBLIC_ROUTERS = (health.router, auth.router)
 
-# Exigencia de los parametros globales del sistema: el admin (ADMIN_EMAILS),
-# no un permiso de dominio.
+# Exigencia de los parametros globales del sistema y de la administracion de
+# usuarios: el admin (ADMIN_EMAILS), no un permiso de dominio.
 ADMIN_ONLY = "admin"
 
 # Router privado -> permiso de dominio que exige (None: solo sesion;
@@ -109,6 +110,7 @@ ADMIN_ONLY = "admin"
 PRIVATE_ROUTERS = (
     (me.router, None),
     (system_params.router, ADMIN_ONLY),
+    (admin_users.router, ADMIN_ONLY),
     (finance_params.router, Permission.FINANCES),
     (weights.router, Permission.WEIGHT),
     (meals.router, Permission.MEALS),

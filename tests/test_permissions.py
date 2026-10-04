@@ -223,8 +223,11 @@ def test_every_private_route_except_me_requires_a_permission():
     assert missing == []
 
 
-def test_system_routes_require_the_admin():
-    routes = [r for r in _private_routes() if r.path.startswith(f"{API}/system")]
+@pytest.mark.parametrize("prefix", ["/system", "/admin"])
+def test_admin_routes_require_the_admin(prefix):
+    """Parametros del sistema y administracion de usuarios: solo el admin, y
+    ningun permiso de dominio alcanza."""
+    routes = [r for r in _private_routes() if r.path.startswith(f"{API}{prefix}")]
 
     assert routes
     for route in routes:

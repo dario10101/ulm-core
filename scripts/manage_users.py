@@ -63,12 +63,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _describe(service: UserAdminService, user) -> str:
-    if user.disabled_at is not None:
-        state = "deshabilitado"
-    elif service.has_logged_in(user.id):
-        state = "activo"
-    else:
-        state = "invitado (sin login todavia)"
+    state = {
+        "disabled": "deshabilitado",
+        "active": "activo",
+        "invited": "invitado (sin login todavia)",
+    }[service.status(user)]
     if service.is_admin(user):
         permissions = "admin (config): todos"
     else:
