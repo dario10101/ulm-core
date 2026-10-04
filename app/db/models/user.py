@@ -67,6 +67,21 @@ class UserIdentity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class UserPermission(Base):
+    """Permiso de dominio de un usuario (ver app/services/permissions.py). El
+    admin no tiene filas aca: sus permisos salen de ADMIN_EMAILS."""
+
+    __tablename__ = "user_permissions"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    # String y no Enum de base: agregar un dominio no requiere migracion. El
+    # valor se valida contra el catalogo al asignarlo.
+    permission: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # Quien lo asigno (auditoria). Nulo si fue por consola (scripts/manage_users.py).
+    granted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class UserSession(Base):
     """Sesion de login. La cookie lleva un token aleatorio; aca solo se guarda
     su SHA-256, asi que leer esta tabla no alcanza para hacerse pasar por nadie

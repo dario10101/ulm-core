@@ -34,6 +34,7 @@ from app.services.errors import (
     NotInvitedError,
     UserDisabledError,
 )
+from app.services.permissions import is_admin_email
 from app.services.user_admin_service import UserAdminService, normalize_email, valid_timezone
 
 GOOGLE = "google"
@@ -180,7 +181,9 @@ class AuthService:
 
         user = self._users.get_by_email(email)
         if user is None:
-            if settings.registration_mode != "open":
+            # Un admin entra aunque nadie lo haya invitado: en una base nueva
+            # (primer deploy) no hay quien pueda invitar a nadie.
+            if settings.registration_mode != "open" and not is_admin_email(email):
                 raise NotInvitedError()
             user = self._user_admin.register(
                 email=email, name=identity.name, timezone=browser_timezone

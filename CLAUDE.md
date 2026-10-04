@@ -10,6 +10,8 @@ Patron establecido con `weights` (repository + service desacoplados): replicarlo
 
 **Auth**: login con Google (OIDC + PKCE), sesion en cookie httpOnly con el token hasheado en `user_sessions`. Solo entran usuarios invitados (`REGISTRATION_MODE`). Todo router va en `PRIVATE_ROUTERS` de `app/main.py` salvo `health`/`auth`; `tests/test_auth.py` falla si una ruta queda sin sesion. Cada repository recibe `*, user_id`; tests de aislamiento en `tests/test_ownership.py`.
 
+**Permisos**: catalogo en `app/services/permissions.py` (`weight`, `meals`, `finances`, `planning` + `.ai`). Cada router de `PRIVATE_ROUTERS` declara su permiso (`require`, 403); `tests/test_permissions.py` falla si una ruta privada (salvo `/me`) no pide ninguno. El admin sale de `ADMIN_EMAILS` (config, no base): todos los permisos, entra sin invitacion, no se edita por API ni consola.
+
 **Zona horaria**: la BD guarda siempre UTC; cada usuario tiene su zona IANA en `users.timezone`. La API habla *hora de pared* del usuario en `scheduled_date`/`repeat_date` (string sin `Z` ni offset; una fecha con offset se rechaza con 422) y devuelve las ocurrencias en las dos formas: `occurrence_at` (instante UTC) y `occurrence_local` (hora de pared, que es lo que el front pinta). Toda cuenta de calendario —que dia es, que dia de semana, que dia del mes— se hace **despues** de convertir a la zona del usuario, nunca sobre el instante UTC. Ver `app/services/cld_task_sync.py`.
 
 Estilo: ver STYLEGUIDE.md (codigo en ingles, comentarios/logs en espanol).

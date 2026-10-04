@@ -267,3 +267,28 @@ class NotInvitedError(LoginError):
 
 class UserDisabledError(LoginError):
     code = "disabled"
+
+
+# --- Permisos ---
+
+
+class UnknownPermissionError(ValidationError):
+    """El permiso no existe en el catalogo (app/services/permissions.py)."""
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        super().__init__(f"Permiso desconocido: {value}")
+
+
+class MissingBasePermissionError(ValidationError):
+    """Se intento dar un permiso avanzado (`<dominio>.ai`) sin el base."""
+
+    def __init__(self, permission: str, base: str) -> None:
+        self.permission = permission
+        self.base = base
+        super().__init__(f"{permission} exige tener antes {base}")
+
+
+class AdminRoleNotEditableError(ConflictError):
+    """El admin sale de ADMIN_EMAILS: no se le asignan ni quitan permisos, ni
+    se lo deshabilita, por API o consola."""

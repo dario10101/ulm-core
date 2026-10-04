@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require
 from app.api.routes import (
     auth,
     calendar_events,
@@ -34,6 +34,7 @@ from app.db.models import finance as finance_model  # noqa: F401
 from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401
 from app.db.models import weight as weight_model  # noqa: F401
+from app.services.permissions import Permission
 
 logger = get_logger(__name__)
 
@@ -94,21 +95,28 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # a nivel de router, asi un endpoint nuevo queda protegido sin acordarse de
 # nada. tests/test_auth.py falla si aparece una ruta privada sin esa dependencia.
 PUBLIC_ROUTERS = (health.router, auth.router)
+
+# Router privado -> permiso de dominio que exige (None: solo sesion). Igual
+# que con la sesion, se exige a nivel de router: tests/test_permissions.py
+# falla si una ruta privada (salvo /me) no pide ningun permiso.
 PRIVATE_ROUTERS = (
-    me.router,
-    weights.router,
-    meals.router,
-    expenses.router,
-    incomes.router,
-    checklists.router,
-    cld_tasks.router,
-    calendar_events.router,
+    (me.router, None),
+    (weights.router, Permission.WEIGHT),
+    (meals.router, Permission.MEALS),
+    (expenses.router, Permission.FINANCES),
+    (incomes.router, Permission.FINANCES),
+    (checklists.router, Permission.PLANNING),
+    (cld_tasks.router, Permission.PLANNING),
+    (calendar_events.router, Permission.PLANNING),
 )
 
 for router in PUBLIC_ROUTERS:
     app.include_router(router, prefix=settings.api_prefix)
-for router in PRIVATE_ROUTERS:
-    app.include_router(router, prefix=settings.api_prefix, dependencies=[Depends(get_current_user)])
+for router, permission in PRIVATE_ROUTERS:
+    dependencies = [Depends(get_current_user)]
+    if permission is not None:
+        dependencies.append(Depends(require(permission)))
+    app.include_router(router, prefix=settings.api_prefix, dependencies=dependencies)
 
 
 @app.get("/")

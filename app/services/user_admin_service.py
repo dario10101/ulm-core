@@ -1,4 +1,4 @@
-"""Administracion de usuarios: invitar, cambiar email, deshabilitar.
+"""Administracion de usuarios: invitar, cambiar email, deshabilitar, permisos.
 
 Es el unico lugar que crea filas en `users` (ver `register`): lo usan el
 script scripts/manage_users.py, el login en modo `open` y, mas adelante, la
@@ -12,9 +12,22 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import settings
 from app.db.models.user import User
+from app.repositories.user_permission_repository import UserPermissionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.user_session_repository import UserSessionRepository
-from app.services.errors import EmailTakenError, UserNotFoundError
+from app.services.errors import (
+    AdminRoleNotEditableError,
+    EmailTakenError,
+    MissingBasePermissionError,
+    UnknownPermissionError,
+    UserNotFoundError,
+)
+from app.services.permissions import (
+    ALL_PERMISSIONS,
+    Permission,
+    is_admin_email,
+    known_permissions,
+)
 
 
 def normalize_email(email: str) -> str:
@@ -37,9 +50,15 @@ def valid_timezone(name: str | None) -> str | None:
 
 
 class UserAdminService:
-    def __init__(self, users: UserRepository, sessions: UserSessionRepository) -> None:
+    def __init__(
+        self,
+        users: UserRepository,
+        sessions: UserSessionRepository,
+        permissions: UserPermissionRepository,
+    ) -> None:
         self._users = users
         self._sessions = sessions
+        self._permissions = permissions
 
     def register(self, *, email: str, name: str | None, timezone: str | None) -> User:
         email = normalize_email(email)
@@ -72,8 +91,9 @@ class UserAdminService:
         return user
 
     def disable(self, user_id: int) -> User:
-        """Corta el acceso ya mismo (cierra sus sesiones) y conserva los datos."""
-        user = self._get(user_id)
+        """Corta el acceso ya mismo (cierra sus sesiones) y conserva los datos.
+        Un admin no se deshabilita: se lo saca de ADMIN_EMAILS."""
+        user = self._get_editable(user_id)
         user.disabled_at = datetime.now(UTC)
         self._sessions.delete_all_for_user(user.id)
         self._users.flush()
@@ -96,6 +116,51 @@ class UserAdminService:
 
     def has_logged_in(self, user_id: int) -> bool:
         return self._users.has_identities(user_id)
+
+    # --- Permisos ---
+
+    @staticmethod
+    def is_admin(user: User) -> bool:
+        return is_admin_email(user.email)
+
+    def effective_permissions(self, user: User) -> frozenset[Permission]:
+        """Lo que el usuario puede usar: todo si es admin, lo asignado si no."""
+        if self.is_admin(user):
+            return ALL_PERMISSIONS
+        return frozenset(known_permissions(self._permissions.list_for_user(user.id)))
+
+    def grant(self, user_id: int, value: str, *, granted_by: int | None) -> frozenset[Permission]:
+        user = self._get_editable(user_id)
+        permission = self._parse(value)
+        base = permission.base
+        if base is not None and base.value not in self._permissions.list_for_user(user.id):
+            raise MissingBasePermissionError(permission.value, base.value)
+        self._permissions.add(user.id, permission.value, granted_by=granted_by)
+        return self.effective_permissions(user)
+
+    def revoke(self, user_id: int, value: str) -> frozenset[Permission]:
+        """Quitar el base tambien quita su avanzado: `finances.ai` sin
+        `finances` no tiene sentido. Acepta un valor fuera del catalogo, para
+        poder limpiar uno que quedo de un dominio que ya no existe."""
+        user = self._get_editable(user_id)
+        self._permissions.remove(user.id, value)
+        self._permissions.remove(user.id, f"{value}.ai")
+        return self.effective_permissions(user)
+
+    @staticmethod
+    def _parse(value: str) -> Permission:
+        try:
+            return Permission(value)
+        except ValueError:
+            raise UnknownPermissionError(value) from None
+
+    def _get_editable(self, user_id: int) -> User:
+        user = self._get(user_id)
+        if self.is_admin(user):
+            raise AdminRoleNotEditableError(
+                f"{user.email} es admin por ADMIN_EMAILS: no se edita por API ni consola"
+            )
+        return user
 
     def _get(self, user_id: int) -> User:
         user = self._users.get(user_id)

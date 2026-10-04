@@ -52,6 +52,9 @@ from app.repositories.sqlalchemy_task_repository import SqlAlchemyTaskRepository
 from app.repositories.sqlalchemy_template_task_repository import (
     SqlAlchemyTemplateTaskRepository,
 )
+from app.repositories.sqlalchemy_user_permission_repository import (
+    SqlAlchemyUserPermissionRepository,
+)
 from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from app.repositories.sqlalchemy_user_session_repository import SqlAlchemyUserSessionRepository
 from app.repositories.sqlalchemy_week_category_day_score_repository import (
@@ -61,6 +64,7 @@ from app.repositories.sqlalchemy_week_repository import SqlAlchemyWeekRepository
 from app.repositories.sqlalchemy_weight_repository import SqlAlchemyWeightRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.template_task_repository import TemplateTaskRepository
+from app.repositories.user_permission_repository import UserPermissionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.user_session_repository import UserSessionRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
@@ -77,6 +81,7 @@ from app.services.finance_catalog_service import FinanceCatalogService
 from app.services.income_service import IncomeService
 from app.services.income_summary_service import IncomeSummaryService
 from app.services.meal_service import MealService
+from app.services.permissions import Permission
 from app.services.template_task_service import TemplateTaskService
 from app.services.user_admin_service import UserAdminService
 from app.services.week_service import WeekService
@@ -103,11 +108,16 @@ def get_google_oauth_client() -> GoogleOAuthClient:
     )
 
 
+def get_user_permission_repository(db: Session = Depends(get_db)) -> UserPermissionRepository:
+    return SqlAlchemyUserPermissionRepository(db)
+
+
 def get_user_admin_service(
     users: UserRepository = Depends(get_user_repository),
     sessions: UserSessionRepository = Depends(get_user_session_repository),
+    permissions: UserPermissionRepository = Depends(get_user_permission_repository),
 ) -> UserAdminService:
-    return UserAdminService(users, sessions)
+    return UserAdminService(users, sessions, permissions)
 
 
 def get_auth_service(
@@ -137,6 +147,30 @@ def get_current_user(
 
 def get_current_user_id(user: User = Depends(get_current_user)) -> int:
     return user.id
+
+
+def get_current_permissions(
+    user: User = Depends(get_current_user),
+    user_admin: UserAdminService = Depends(get_user_admin_service),
+) -> frozenset[Permission]:
+    """Permisos efectivos del usuario actual. FastAPI cachea una dependencia
+    por request, asi que varios `require` en la misma ruta hacen una sola query."""
+    return user_admin.effective_permissions(user)
+
+
+def require(permission: Permission):
+    """Dependencia que exige `permission`; se usa a nivel de router (ver
+    PRIVATE_ROUTERS en app/main.py). 403 y no 404: a diferencia de un recurso
+    ajeno, que el modulo existe no es un secreto (el menu ya lo muestra)."""
+
+    def _require(permissions: frozenset[Permission] = Depends(get_current_permissions)) -> None:
+        if permission not in permissions:
+            raise HTTPException(status_code=403, detail=f"Necesitas el permiso {permission.value}")
+
+    # Marca para el test fail-closed (tests/test_permissions.py): asi sabe que
+    # permiso exige cada ruta sin depender de nombres de funciones.
+    _require.required_permission = permission  # type: ignore[attr-defined]
+    return _require
 
 
 def get_current_timezone(user: User = Depends(get_current_user)) -> ZoneInfo:

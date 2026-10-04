@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # desconocido crea el usuario. Ver AuthService.login_with_google.
     registration_mode: Literal["invite_only", "open"] = "invite_only"
 
+    # Admins de la plataforma, separados por coma. Tienen todos los permisos y
+    # entran aunque no esten invitados (asi el primer deploy, con la base
+    # vacia, no queda sin nadie que pueda entrar). String y no list[str]:
+    # pydantic-settings leeria una lista como JSON. Ver app/services/permissions.py.
+    admin_emails: str = ""
+
     # Zona horaria si el navegador no manda una valida en el primer login.
     default_timezone: str = "America/Bogota"
 

@@ -5,6 +5,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.db.models.user import User, UserSession
+from app.repositories.sqlalchemy_user_permission_repository import (
+    SqlAlchemyUserPermissionRepository,
+)
 from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from app.repositories.sqlalchemy_user_session_repository import SqlAlchemyUserSessionRepository
 from app.services.errors import EmailTakenError, UserNotFoundError
@@ -15,7 +18,9 @@ from scripts import manage_users
 @pytest.fixture
 def service(db_session) -> UserAdminService:
     return UserAdminService(
-        SqlAlchemyUserRepository(db_session), SqlAlchemyUserSessionRepository(db_session)
+        SqlAlchemyUserRepository(db_session),
+        SqlAlchemyUserSessionRepository(db_session),
+        SqlAlchemyUserPermissionRepository(db_session),
     )
 
 
@@ -101,3 +106,33 @@ def test_script_disables_and_enables(db_session):
     assert db_session.get(User, 1).disabled_at is not None
     assert _run(db_session, "enable", "ruben@example.com") == 0
     assert db_session.get(User, 1).disabled_at is None
+
+
+def test_script_grants_and_revokes_permissions(db_session, capsys):
+    assert _run(db_session, "grant", "ruben@example.com", "finances") == 0
+    assert _run(db_session, "grant", "ruben@example.com", "finances.ai") == 0
+    assert _run(db_session, "list") == 0
+    assert "finances, finances.ai" in capsys.readouterr().out
+
+    assert _run(db_session, "revoke", "ruben@example.com", "finances") == 0
+    assert _run(db_session, "list") == 0
+    assert "(sin permisos)" in capsys.readouterr().out
+
+
+def test_script_rejects_invalid_grants(db_session, capsys):
+    assert _run(db_session, "grant", "ruben@example.com", "platform.admin") == 1
+    assert _run(db_session, "grant", "ruben@example.com", "finances.ai") == 1
+    errors = capsys.readouterr().err
+    assert "desconocido" in errors
+    assert "exige" in errors
+
+
+def test_script_shows_and_protects_the_config_admin(db_session, capsys, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", "ruben@example.com")
+
+    assert _run(db_session, "list") == 0
+    assert "admin (config)" in capsys.readouterr().out
+    assert _run(db_session, "disable", "ruben@example.com") == 1
+    assert "ADMIN_EMAILS" in capsys.readouterr().err

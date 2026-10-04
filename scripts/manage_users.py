@@ -6,10 +6,15 @@ Uso (desde ulm-core, con el venv activo y la base migrada):
     python -m scripts.manage_users set-email 1 ruben@gmail.com
     python -m scripts.manage_users disable ana@gmail.com
     python -m scripts.manage_users enable ana@gmail.com
+    python -m scripts.manage_users grant ana@gmail.com finances
+    python -m scripts.manage_users revoke ana@gmail.com finances
 
 Invitar crea el usuario sin identidad: entra con el primer login de Google
 con ese email. En modo Testing de Google, ese email tambien tiene que estar en
 la lista de test users de la consola de Google.
+
+Permisos: ver app/services/permissions.py. El admin no se asigna aca: sale de
+ADMIN_EMAILS en la configuracion, y su usuario no se edita por consola.
 
 Es una capa fina sobre UserAdminService (mismas reglas que tendra la UI): aca
 solo se parsean argumentos y se hace el commit.
@@ -23,6 +28,9 @@ from sqlalchemy.orm import Session
 
 import app.main  # noqa: F401 -- registra todos los modelos en Base.metadata
 from app.db.session import SessionLocal
+from app.repositories.sqlalchemy_user_permission_repository import (
+    SqlAlchemyUserPermissionRepository,
+)
 from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from app.repositories.sqlalchemy_user_session_repository import SqlAlchemyUserSessionRepository
 from app.services.errors import DomainError
@@ -46,6 +54,11 @@ def _parser() -> argparse.ArgumentParser:
     for name, help_text in (("disable", "Corta el acceso"), ("enable", "Lo devuelve")):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("email")
+
+    for name, help_text in (("grant", "Da un permiso"), ("revoke", "Quita un permiso")):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("email")
+        command.add_argument("permission", help="ej. finances, finances.ai, planning")
     return parser
 
 
@@ -56,7 +69,14 @@ def _describe(service: UserAdminService, user) -> str:
         state = "activo"
     else:
         state = "invitado (sin login todavia)"
-    return f"{user.id:>4}  {user.email:<40} {user.name:<25} {user.timezone:<20} {state}"
+    if service.is_admin(user):
+        permissions = "admin (config): todos"
+    else:
+        permissions = ", ".join(sorted(p.value for p in service.effective_permissions(user)))
+    return (
+        f"{user.id:>4}  {user.email:<40} {user.name:<25} {user.timezone:<20} {state:<30}"
+        f" {permissions or '(sin permisos)'}"
+    )
 
 
 def main(
@@ -65,7 +85,11 @@ def main(
 ) -> int:
     args = _parser().parse_args(argv)
     db = session_factory()
-    service = UserAdminService(SqlAlchemyUserRepository(db), SqlAlchemyUserSessionRepository(db))
+    service = UserAdminService(
+        SqlAlchemyUserRepository(db),
+        SqlAlchemyUserSessionRepository(db),
+        SqlAlchemyUserPermissionRepository(db),
+    )
     try:
         if args.command == "list":
             for user in service.list_users():
@@ -75,6 +99,12 @@ def main(
             user = service.invite(args.email, name=args.name)
         elif args.command == "set-email":
             user = service.set_email(args.user_id, args.email)
+        elif args.command == "grant":
+            user = service.get_by_email(args.email)
+            service.grant(user.id, args.permission, granted_by=None)
+        elif args.command == "revoke":
+            user = service.get_by_email(args.email)
+            service.revoke(user.id, args.permission)
         elif args.command == "disable":
             user = service.disable(service.get_by_email(args.email).id)
         else:

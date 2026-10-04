@@ -12,8 +12,10 @@ esquema creado y el usuario por defecto sembrado, y nada de lo que escriba
 sobrevive al siguiente.
 
 Login: por defecto cada request se hace como el usuario por defecto, sin
-cookie (se reemplaza `get_current_user`). `acting_as` cambia de usuario; los
-tests del login en si usan la fixture `real_auth`, que quita el reemplazo.
+cookie (se reemplaza `get_current_user`) y con todos los permisos de dominio
+(se reemplaza `get_current_permissions`). `acting_as` cambia de usuario. Los
+tests del login usan `real_auth` y los de permisos `real_permissions`, que
+quitan cada reemplazo.
 """
 
 from collections.abc import Iterator
@@ -25,7 +27,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_permissions, get_current_user
 from app.db.base_class import Base
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
@@ -40,6 +42,7 @@ from app.db.models import weight as weight_model  # noqa: F401
 from app.db.models.user import User
 from app.db.session import get_db
 from app.main import app
+from app.services.permissions import ALL_PERMISSIONS
 
 # SQLite en memoria para no depender de Postgres. StaticPool mantiene una sola
 # conexion viva, que es lo que hace que ":memory:" persista entre operaciones.
@@ -114,6 +117,7 @@ def db_session():
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = lambda: session.get(User, _acting_user_ids[-1])
+    app.dependency_overrides[get_current_permissions] = lambda: ALL_PERMISSIONS
     try:
         yield session
     finally:
@@ -156,3 +160,10 @@ def real_auth():
     """Quita el reemplazo de get_current_user: los requests necesitan una
     cookie de sesion de verdad. Para los tests del login."""
     app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def real_permissions():
+    """Quita el reemplazo de get_current_permissions: cada usuario tiene solo
+    lo que le asigne el test (o todo, si su email esta en ADMIN_EMAILS)."""
+    app.dependency_overrides.pop(get_current_permissions, None)

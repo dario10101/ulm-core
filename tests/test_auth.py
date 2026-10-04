@@ -135,7 +135,9 @@ def test_invited_user_links_on_first_login(browser, google, db_session):
     assert response.headers["location"] == f"{FRONT}/admin"
     assert SESSION_COOKIE in response.cookies
     me = browser.get(f"{API}/me").json()
-    # Primer login: nombre de Google y zona del navegador.
+    # Primer login: nombre de Google y zona del navegador. (Los permisos de /me
+    # se prueban en test_permissions.py.)
+    del me["is_admin"], me["permissions"]
     assert me == {
         "id": 1,
         "name": "Ruben Dorado",
@@ -191,6 +193,18 @@ def test_unknown_email_is_rejected_when_invite_only(browser, google, db_session)
     assert SESSION_COOKIE not in response.cookies
     assert db_session.query(User).count() == 1
     assert db_session.query(UserIdentity).count() == 0
+
+
+def test_an_admin_logs_in_without_an_invitation(browser, google, db_session, monkeypatch):
+    """Base nueva (primer deploy): nadie puede invitar a nadie, asi que los
+    emails de ADMIN_EMAILS entran igual y se crea su usuario."""
+    monkeypatch.setattr(settings, "admin_emails", "jefe@gmail.com")
+    google.identity = GoogleIdentity("sub-jefe", "Jefe@Gmail.com", True, "Jefe", None)
+
+    response = _login(browser, google)
+
+    assert response.headers["location"] == f"{FRONT}/admin"
+    assert db_session.query(User).filter_by(email="jefe@gmail.com").one().name == "Jefe"
 
 
 def test_open_registration_creates_the_user(browser, google, db_session, monkeypatch):
