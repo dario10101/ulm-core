@@ -21,6 +21,7 @@ from app.db.models.finance import DirectIncome
 from app.db.models.user import User
 from app.db.session import get_db
 from app.integrations.google_oauth import GoogleOAuthClient, HttpGoogleOAuthClient
+from app.integrations.holiday_provider import HolidayProvider, PythonHolidaysProvider
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
@@ -71,17 +72,21 @@ from app.repositories.week_category_day_score_repository import WeekCategoryDayS
 from app.repositories.week_repository import WeekRepository
 from app.repositories.weight_repository import WeightRepository
 from app.services.auth_service import AuthService
+from app.services.calendar_admin_service import CalendarAdminService
 from app.services.calendar_event_service import CalendarEventService
 from app.services.category_service import CategoryService
 from app.services.checklist_analytics_service import ChecklistAnalyticsService
 from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
+from app.services.cld_user_event_service import CldUserEventService
 from app.services.expense_service import ExpenseService
 from app.services.finance_catalog_service import FinanceCatalogService
+from app.services.finance_params_service import FinanceParamsService
 from app.services.income_service import IncomeService
 from app.services.income_summary_service import IncomeSummaryService
 from app.services.meal_service import MealService
 from app.services.permissions import Permission
+from app.services.system_params_service import SystemParamsService
 from app.services.template_task_service import TemplateTaskService
 from app.services.user_admin_service import UserAdminService
 from app.services.week_service import WeekService
@@ -173,6 +178,21 @@ def require(permission: Permission):
     return _require
 
 
+def require_admin(
+    user: User = Depends(get_current_user),
+    user_admin: UserAdminService = Depends(get_user_admin_service),
+) -> None:
+    """Parametros globales del sistema (Settings -> System): solo ADMIN_EMAILS.
+    Se monta a nivel de router, igual que `require` (ver PRIVATE_ROUTERS)."""
+    if not user_admin.is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo el administrador puede hacer esto")
+
+
+# Marca para el test fail-closed (tests/test_permissions.py), igual que
+# `required_permission` en `require`.
+require_admin.requires_admin = True  # type: ignore[attr-defined]
+
+
 def get_current_timezone(user: User = Depends(get_current_user)) -> ZoneInfo:
     """Zona IANA del usuario. Todo calculo de calendario (dia, dia de semana,
     dia del mes) se hace convirtiendo a esta zona; la BD guarda UTC."""
@@ -210,6 +230,18 @@ def get_finance_catalog_service(
     repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
 ) -> FinanceCatalogService:
     return FinanceCatalogService(repository)
+
+
+def get_finance_params_service(
+    repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
+) -> FinanceParamsService:
+    return FinanceParamsService(repository)
+
+
+def get_system_params_service(
+    repository: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
+) -> SystemParamsService:
+    return SystemParamsService(repository)
 
 
 def get_expense_repository(db: Session = Depends(get_db)) -> ExpenseRepository:
@@ -351,3 +383,24 @@ def get_calendar_event_service(
     cld_user_event_repository: CldUserEventRepository = Depends(get_cld_user_event_repository),
 ) -> CalendarEventService:
     return CalendarEventService(cld_event_repository, cld_user_event_repository)
+
+
+def get_cld_user_event_service(
+    repository: CldUserEventRepository = Depends(get_cld_user_event_repository),
+    category_repository: CategoryRepository = Depends(get_category_repository),
+) -> CldUserEventService:
+    return CldUserEventService(repository, category_repository)
+
+
+@lru_cache
+def get_holiday_provider() -> HolidayProvider:
+    return PythonHolidaysProvider(
+        country=settings.holidays_country, language=settings.holidays_language
+    )
+
+
+def get_calendar_admin_service(
+    repository: CldEventRepository = Depends(get_cld_event_repository),
+    holidays: HolidayProvider = Depends(get_holiday_provider),
+) -> CalendarAdminService:
+    return CalendarAdminService(repository, holidays)

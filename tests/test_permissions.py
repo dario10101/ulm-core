@@ -35,6 +35,7 @@ DOMAIN_ENDPOINTS = [
     ("/meals/", Permission.MEALS),
     ("/expenses/", Permission.FINANCES),
     ("/incomes/direct", Permission.FINANCES),
+    ("/finances/tags", Permission.FINANCES),
     ("/checklists/categories", Permission.PLANNING),
     ("/calendar-tasks?date=2026-10-01", Permission.PLANNING),
     ("/calendar-events?first_day=2026-10-01&last_day=2026-10-07", Permission.PLANNING),
@@ -189,6 +190,13 @@ def _required_permissions(dependant) -> set[Permission]:
     return found
 
 
+def _requires_admin(dependant) -> bool:
+    return any(
+        getattr(dep.call, "requires_admin", False) or _requires_admin(dep)
+        for dep in dependant.dependencies
+    )
+
+
 def _private_routes() -> list[APIRoute]:
     public_paths = {
         f"{settings.api_prefix}{route.path}" for router in PUBLIC_ROUTERS for route in router.routes
@@ -202,14 +210,39 @@ def _private_routes() -> list[APIRoute]:
 
 def test_every_private_route_except_me_requires_a_permission():
     """Si alguien monta un router nuevo con permiso None, o una ruta suelta,
-    esto falla: un modulo no queda abierto a cualquier usuario logueado."""
+    esto falla: un modulo no queda abierto a cualquier usuario logueado.
+    Exigir admin (parametros del sistema) cuenta como permiso."""
     missing = [
         route.path
         for route in _private_routes()
-        if route.path != f"{API}/me" and not _required_permissions(route.dependant)
+        if route.path != f"{API}/me"
+        and not _required_permissions(route.dependant)
+        and not _requires_admin(route.dependant)
     ]
 
     assert missing == []
+
+
+def test_system_routes_require_the_admin():
+    routes = [r for r in _private_routes() if r.path.startswith(f"{API}/system")]
+
+    assert routes
+    for route in routes:
+        assert _requires_admin(route.dependant), route.path
+        assert _required_permissions(route.dependant) == set(), route.path
+
+
+@pytest.mark.parametrize("path", ["/system/access", "/system/expense-categories"])
+def test_system_routes_reject_non_admins_even_with_every_domain(db_session, path):
+    _grant(db_session, *(p.value for p in ALL_PERMISSIONS))
+
+    assert client.get(f"{API}{path}").status_code == 403
+
+
+def test_system_routes_open_for_the_admin(monkeypatch):
+    monkeypatch.setattr(settings, "admin_emails", "ruben@example.com")
+
+    assert client.get(f"{API}/system/access").status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -219,6 +252,7 @@ def test_every_private_route_except_me_requires_a_permission():
         ("/meals", Permission.MEALS),
         ("/expenses", Permission.FINANCES),
         ("/incomes", Permission.FINANCES),
+        ("/finances", Permission.FINANCES),
         ("/checklists", Permission.PLANNING),
         ("/calendar-tasks", Permission.PLANNING),
         ("/calendar-events", Permission.PLANNING),

@@ -27,6 +27,9 @@ from app.db.models.cld_user_event import CldUserEvent
 from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
 from app.repositories.sqlalchemy_category_repository import SqlAlchemyCategoryRepository
 from app.repositories.sqlalchemy_cld_task_repository import SqlAlchemyCldTaskRepository
+from app.repositories.sqlalchemy_cld_user_event_repository import (
+    SqlAlchemyCldUserEventRepository,
+)
 from app.repositories.sqlalchemy_task_repository import SqlAlchemyTaskRepository
 from app.repositories.sqlalchemy_template_task_repository import SqlAlchemyTemplateTaskRepository
 from app.repositories.sqlalchemy_week_category_day_score_repository import (
@@ -299,7 +302,67 @@ def test_calendar_task_cannot_use_another_users_category(other_user):
     assert updated.status_code == 404
 
 
-# --- Calendario: eventos personales (sin CRUD todavia, solo lectura) ---
+# --- Calendario: eventos personales ---
+
+
+def _user_event_payload(category_id: int, name: str = "Viaje") -> dict:
+    return {
+        "category_id": category_id,
+        "code": "TRAVEL",
+        "first_day": _iso(1),
+        "last_day": _iso(3),
+        "name": name,
+    }
+
+
+def test_another_users_calendar_event_returns_404(other_user):
+    with acting_as(other_user):
+        event_id = client.post(
+            f"{API}/calendar-events/user-events",
+            json=_user_event_payload(_make_category("De B"), "De B"),
+        ).json()["id"]
+    url = f"{API}/calendar-events/user-events/{event_id}"
+    update = _user_event_payload(_make_category("Mia"), "Pisado")
+
+    assert client.put(url, json=update).status_code == 404
+    assert client.delete(url).status_code == 404
+
+    with acting_as(other_user):
+        theirs = client.get(
+            f"{API}/calendar-events/ranges", params={"first_day": _iso(0), "last_day": _iso(6)}
+        ).json()
+        codes = client.get(f"{API}/calendar-events/user-event-codes").json()
+    assert [e["name"] for e in theirs if e["id"] == event_id] == ["De B"]
+    assert "TRAVEL" in codes
+
+
+def test_calendar_event_cannot_use_another_users_category(other_user):
+    with acting_as(other_user):
+        foreign_category_id = _make_category("De B")
+    own = client.post(
+        f"{API}/calendar-events/user-events", json=_user_event_payload(_make_category("Mia"))
+    ).json()
+
+    created = client.post(
+        f"{API}/calendar-events/user-events", json=_user_event_payload(foreign_category_id)
+    )
+    updated = client.put(
+        f"{API}/calendar-events/user-events/{own['id']}",
+        json=_user_event_payload(foreign_category_id),
+    )
+
+    assert created.status_code == 404
+    assert updated.status_code == 404
+
+
+def test_user_event_codes_do_not_include_another_users_types(other_user):
+    with acting_as(other_user):
+        client.post(
+            f"{API}/calendar-events/user-events",
+            json={**_user_event_payload(_make_category("De B")), "code": "SOLO DE B"},
+        )
+
+    assert "SOLO DE B" not in client.get(f"{API}/calendar-events/user-event-codes").json()
 
 
 @pytest.mark.parametrize("path", ["", "/ranges"])
@@ -513,6 +576,9 @@ def foreign_rows(db_session, other_user) -> dict[str, int]:
         week_id = _open_week()
         task_id = _create_week_task(week_id, category_id)
         cld_task_id = _create_cld_task(category_id)
+        user_event_id = client.post(
+            f"{API}/calendar-events/user-events", json=_user_event_payload(category_id)
+        ).json()["id"]
     db_session.add(_score(user_id=other_user, cl_week_id=week_id, category_id=category_id))
     db_session.commit()
     return {
@@ -521,6 +587,7 @@ def foreign_rows(db_session, other_user) -> dict[str, int]:
         "week": week_id,
         "task": task_id,
         "cld_task": cld_task_id,
+        "user_event": user_event_id,
     }
 
 
@@ -532,6 +599,7 @@ def test_repositories_do_not_return_another_users_rows(db_session, foreign_rows)
     categories = SqlAlchemyCategoryRepository(db_session)
     templates = SqlAlchemyTemplateTaskRepository(db_session)
     cld_tasks = SqlAlchemyCldTaskRepository(db_session)
+    user_events = SqlAlchemyCldUserEventRepository(db_session)
 
     # Control: como B, cada consulta si encuentra su fila.
     assert weeks.get(ids["week"], user_id=b) is not None
@@ -543,6 +611,8 @@ def test_repositories_do_not_return_another_users_rows(db_session, foreign_rows)
     assert categories.has_template_tasks(ids["category"], user_id=b)
     assert templates.get(ids["template"], user_id=b) is not None
     assert cld_tasks.get(ids["cld_task"], user_id=b) is not None
+    assert user_events.get(ids["user_event"], user_id=b) is not None
+    assert user_events.list_codes(user_id=b) == ["TRAVEL"]
 
     # Como A, ninguna.
     assert weeks.get(ids["week"], user_id=a) is None
@@ -554,3 +624,5 @@ def test_repositories_do_not_return_another_users_rows(db_session, foreign_rows)
     assert not categories.has_template_tasks(ids["category"], user_id=a)
     assert templates.get(ids["template"], user_id=a) is None
     assert cld_tasks.get(ids["cld_task"], user_id=a) is None
+    assert user_events.get(ids["user_event"], user_id=a) is None
+    assert user_events.list_codes(user_id=a) == []

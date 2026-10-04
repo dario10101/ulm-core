@@ -216,6 +216,46 @@ class InterestPeriodTakenError(ConflictError):
         super().__init__("Ya existe un registro de intereses para esa fuente en ese mes")
 
 
+# --- Administracion de catalogos (tags, categorias, fuentes...) ---
+
+
+class CatalogItemNotFoundError(NotFoundError):
+    """El item de catalogo a editar/borrar no existe (o no es del usuario)."""
+
+    def __init__(self, label: str, item_id: int) -> None:
+        self.label = label
+        self.item_id = item_id
+        super().__init__(f"{label} inexistente: {item_id}")
+
+
+class CatalogNameTakenError(ConflictError):
+    """Ya hay otro item con ese nombre (sin distinguir mayusculas). Cuenta
+    tambien los archivados: restaurar el viejo es mejor que tener dos con el
+    mismo nombre partiendo el historico en analytics."""
+
+    def __init__(self, name: str, *, archived: bool) -> None:
+        self.name = name
+        self.archived = archived
+        where = " (archivado: restauralo en vez de crear otro)" if archived else ""
+        super().__init__(f"Ya existe '{name}'{where}")
+
+
+class CatalogItemLockedError(ConflictError):
+    """El cambio dejaria registros existentes inconsistentes (ej. pasar a
+    DIRECT una fuente con ingresos de intereses)."""
+
+
+# --- Eventos generales de calendario ---
+
+
+class CldEventNotFoundError(NotFoundError):
+    """El evento general (festivo, fecha especial) no existe."""
+
+
+class CldUserEventNotFoundError(NotFoundError):
+    """El evento personal no existe (o no es del usuario)."""
+
+
 # --- Usuarios y login ---
 
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class CatalogStatus(str, Enum):
@@ -40,6 +40,52 @@ class TagRead(BaseModel):
     name: str
     color_key: str
     status: CatalogStatus
+
+
+# --- Administracion de catalogos (Settings y "View records") ---
+
+# Nombre sin espacios al borde: "Mercado " y "Mercado" son el mismo item.
+CatalogName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class CatalogDeleteResult(str, Enum):
+    """Borrado hibrido: sin registros que lo usen se borra; con registros se
+    archiva (DISABLED) para no romper el historico."""
+
+    DELETED = "DELETED"
+    ARCHIVED = "ARCHIVED"
+
+
+class CatalogDeleteRead(BaseModel):
+    result: CatalogDeleteResult
+
+
+class TagWrite(BaseModel):
+    name: Annotated[CatalogName, Field(max_length=60)]
+    color_key: str = Field(min_length=1, max_length=30)
+    # Mandar ENABLED a un item archivado lo restaura.
+    status: CatalogStatus = CatalogStatus.ENABLED
+
+
+class TagAdminRead(TagRead):
+    usage_count: int
+
+
+class IconCatalogWrite(BaseModel):
+    """Categoria de gasto o metodo de pago (mismos campos)."""
+
+    name: Annotated[CatalogName, Field(max_length=120)]
+    icon_key: str = Field(min_length=1, max_length=60)
+    color_key: str = Field(min_length=1, max_length=30)
+    status: CatalogStatus = CatalogStatus.ENABLED
+
+
+class CategoryAdminRead(CategoryRead):
+    usage_count: int
+
+
+class PaymentMethodAdminRead(PaymentMethodRead):
+    usage_count: int
 
 
 class ExpenseOptionsRead(BaseModel):
@@ -138,6 +184,7 @@ class IncomeSourceRead(BaseModel):
     id: int
     name: str
     type: IncomeKind
+    status: CatalogStatus
 
 
 class IncomeSubcategoryRead(BaseModel):
@@ -147,6 +194,29 @@ class IncomeSubcategoryRead(BaseModel):
     source_id: int
     name: str
     type: IncomeKind
+    status: CatalogStatus
+
+
+class IncomeSourceWrite(BaseModel):
+    name: Annotated[CatalogName, Field(max_length=120)]
+    type: IncomeKind
+    status: CatalogStatus = CatalogStatus.ENABLED
+
+
+class IncomeSourceAdminRead(IncomeSourceRead):
+    # Ingresos (directos + intereses) que la usan.
+    usage_count: int
+    subcategory_count: int
+
+
+class IncomeSubcategoryWrite(BaseModel):
+    name: Annotated[CatalogName, Field(max_length=120)]
+    source_id: int
+    status: CatalogStatus = CatalogStatus.ENABLED
+
+
+class IncomeSubcategoryAdminRead(IncomeSubcategoryRead):
+    usage_count: int
 
 
 class InterestEndBalance(BaseModel):
@@ -160,7 +230,7 @@ class InterestEndBalance(BaseModel):
 
 class IncomeOptionsRead(BaseModel):
     """Todo lo que necesita "Add record -> Income" (directo e intereses) en un
-    solo viaje."""
+    solo viaje. Solo items ENABLED: los archivados no se ofrecen."""
 
     sources: list[IncomeSourceRead]
     subcategories: list[IncomeSubcategoryRead]

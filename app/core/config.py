@@ -50,8 +50,18 @@ class Settings(BaseSettings):
     # pydantic-settings leeria una lista como JSON. Ver app/services/permissions.py.
     admin_emails: str = ""
 
+    # ID del proyecto de Google Cloud del login. Solo arma el acceso directo de
+    # Settings -> Access a la lista de test users (Google Auth Platform ->
+    # Audience); vacio, el link abre la consola en el ultimo proyecto usado.
+    google_cloud_project: str = ""
+
     # Zona horaria si el navegador no manda una valida en el primer login.
     default_timezone: str = "America/Bogota"
+
+    # Pais (ISO 3166-1 alfa-2) e idioma de los festivos que propone la libreria
+    # `holidays` en Settings -> Calendar events.
+    holidays_country: str = "CO"
+    holidays_language: str = "es"
 
 
 settings = Settings()

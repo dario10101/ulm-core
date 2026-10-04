@@ -15,3 +15,11 @@ class MeRead(BaseModel):
     timezone: str
     is_admin: bool
     permissions: list[str]
+
+
+class AccessInfoRead(BaseModel):
+    """Como entra la gente a la app (Settings -> Access, solo admin)."""
+
+    registration_mode: str
+    # Lista de test users de Google mientras la app OAuth este en modo Testing.
+    google_audience_url: str

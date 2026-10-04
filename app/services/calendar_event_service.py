@@ -91,6 +91,7 @@ class CalendarEventService:
                 source=MarkerSource.USER_EVENT,
                 first_day=user_event.first_day,
                 last_day=user_event.last_day,
+                category_id=user_event.category_id,
             )
             for user_event in self._cld_user_event_repository.list_in_range(
                 user_id, first_day, last_day

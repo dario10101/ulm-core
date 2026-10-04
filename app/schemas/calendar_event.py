@@ -4,8 +4,16 @@ marcadores de inicio/fin dentro de un rango (ver CalendarEventService)."""
 
 from datetime import date
 from enum import Enum
+from typing import Annotated, Self
 
-from pydantic import BaseModel
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 
 class MarkerType(str, Enum):
@@ -46,3 +54,106 @@ class CalendarEventRangeRead(BaseModel):
     source: MarkerSource
     first_day: date
     last_day: date
+    # Solo los eventos personales tienen categoria; el front la necesita para
+    # prellenar la edicion y para filtrar la vista diaria por categoria.
+    category_id: int | None = None
+
+
+# --- Eventos personales del usuario (cld_user_events) ---
+
+
+def _normalize_code(value: str) -> str:
+    """El tipo se guarda siempre en mayusculas y sin espacios sobrantes, asi
+    "  travel " y "TRAVEL" son el mismo tipo y no aparecen dos veces en el
+    selector."""
+    return " ".join(value.split()).upper()
+
+
+EventCode = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=30),
+    AfterValidator(_normalize_code),
+]
+
+
+class CldUserEventWrite(BaseModel):
+    category_id: int
+    code: EventCode
+    first_day: date
+    last_day: date
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    detail: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _range_is_ordered(self) -> Self:
+        if self.last_day < self.first_day:
+            raise ValueError("last_day no puede ser anterior a first_day")
+        return self
+
+
+class CldUserEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    category_id: int
+    code: str
+    first_day: date
+    last_day: date
+    name: str
+    detail: str | None
+
+
+# --- Administracion de eventos generales (Settings -> Calendar events) ---
+
+
+class CldEventCode(str, Enum):
+    """Tipos de evento general que administra el admin."""
+
+    HOLIDAY = "HOLIDAY"
+    # Fechas especiales que no son festivo (Dia de la Madre, Halloween...).
+    SPECIAL_DATE = "SPECIAL_DATE"
+
+
+class CldEventWrite(BaseModel):
+    code: CldEventCode
+    first_day: date
+    last_day: date
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    detail: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _range_is_ordered(self) -> Self:
+        if self.last_day < self.first_day:
+            raise ValueError("last_day no puede ser anterior a first_day")
+        return self
+
+
+class CldEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    first_day: date
+    last_day: date
+    name: str
+    detail: str | None
+
+
+class OfficialHolidayRead(BaseModel):
+    """Festivo que calcula la libreria. `event_id` es el HOLIDAY de
+    cld_events que cae ese dia, o None si el admin no lo tiene cargado."""
+
+    day: date
+    name: str
+    event_id: int | None
+
+
+class CalendarYearRead(BaseModel):
+    year: int
+    country: str
+    events: list[CldEventRead]
+    official_holidays: list[OfficialHolidayRead]
+
+
+class ImportHolidaysRequest(BaseModel):
+    year: int = Field(ge=1900, le=2200)

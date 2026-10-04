@@ -7,6 +7,9 @@ El engine, el cliente y el aislamiento por test viven en conftest.py.
 
 from datetime import date, timedelta
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from app.db.models.cld_event import CldEvent
 from app.db.models.cld_user_event import CldUserEvent
 from app.main import app
@@ -27,9 +30,9 @@ def _make_category(name: str) -> int:
 
 
 def _insert(db, model, **kwargs) -> None:
-    """Inserta directo: todavia no hay endpoint de escritura para cld_events
-    ni cld_user_events. `db` es la sesion del test (fixture db_session), que
-    es la misma que la app usa durante ese test."""
+    """Inserta directo, para armar escenarios de lectura sin depender de los
+    endpoints de escritura. `db` es la sesion del test (fixture db_session),
+    que es la misma que la app usa durante ese test."""
     db.add(model(**kwargs))
     db.commit()
 
@@ -182,3 +185,159 @@ def test_ranges_endpoint_excludes_events_entirely_outside_the_range(db_session):
         f"/api/v1/calendar-events/ranges?first_day={_d(548)}&last_day={_d(565)}"
     ).json()
     assert all(r["name"] != "Out of range holiday" for r in response)
+
+
+# --- Eventos personales: alta, edicion y borrado (cld_user_events) ---
+
+USER_EVENTS = "/api/v1/calendar-events/user-events"
+
+
+def _event_payload(category_id: int, **overrides) -> dict:
+    return {
+        "category_id": category_id,
+        "code": "TRAVEL",
+        "first_day": _d(600).isoformat(),
+        "last_day": _d(602).isoformat(),
+        "name": "Viaje",
+        "detail": None,
+        **overrides,
+    }
+
+
+def _ranges_around(offset: int) -> list[dict]:
+    return client.get(
+        f"/api/v1/calendar-events/ranges?first_day={_d(offset - 5)}&last_day={_d(offset + 5)}"
+    ).json()
+
+
+def test_create_user_event_shows_up_in_ranges_with_its_category():
+    category_id = _make_category("Viajes CRUD")
+
+    response = client.post(USER_EVENTS, json=_event_payload(category_id, name="Cartagena"))
+
+    assert response.status_code == 201
+    created = response.json()
+    [listed] = [r for r in _ranges_around(600) if r["name"] == "Cartagena"]
+    assert listed["id"] == created["id"]
+    assert listed["source"] == "user_event"
+    assert listed["category_id"] == category_id
+
+
+def test_code_is_always_stored_in_uppercase():
+    category_id = _make_category("Mayusculas")
+
+    created = client.post(USER_EVENTS, json=_event_payload(category_id, code="  day   off ")).json()
+    updated = client.put(
+        f"{USER_EVENTS}/{created['id']}", json=_event_payload(category_id, code="concert")
+    ).json()
+
+    assert created["code"] == "DAY OFF"
+    assert updated["code"] == "CONCERT"
+
+
+def test_blank_code_is_rejected():
+    category_id = _make_category("Sin tipo")
+
+    response = client.post(USER_EVENTS, json=_event_payload(category_id, code="   "))
+
+    assert response.status_code == 422
+
+
+def test_last_day_before_first_day_is_rejected():
+    category_id = _make_category("Rango invertido")
+
+    response = client.post(
+        USER_EVENTS,
+        json=_event_payload(
+            category_id, first_day=_d(610).isoformat(), last_day=_d(609).isoformat()
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_user_event_changes_every_editable_field():
+    first = _make_category("Antes")
+    second = _make_category("Despues")
+    event_id = client.post(USER_EVENTS, json=_event_payload(first)).json()["id"]
+
+    response = client.put(
+        f"{USER_EVENTS}/{event_id}",
+        json=_event_payload(
+            second,
+            code="VACATION",
+            first_day=_d(620).isoformat(),
+            last_day=_d(625).isoformat(),
+            name="Playa",
+            detail="Con la familia",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": event_id,
+        "category_id": second,
+        "code": "VACATION",
+        "first_day": _d(620).isoformat(),
+        "last_day": _d(625).isoformat(),
+        "name": "Playa",
+        "detail": "Con la familia",
+    }
+
+
+def test_delete_user_event_removes_it():
+    category_id = _make_category("Para borrar")
+    event_id = client.post(USER_EVENTS, json=_event_payload(category_id, name="Efimero")).json()[
+        "id"
+    ]
+
+    assert client.delete(f"{USER_EVENTS}/{event_id}").status_code == 204
+    assert all(r["name"] != "Efimero" for r in _ranges_around(600))
+    assert client.delete(f"{USER_EVENTS}/{event_id}").status_code == 404
+
+
+def test_unknown_user_event_returns_404():
+    category_id = _make_category("Fantasma")
+
+    assert client.put(f"{USER_EVENTS}/999999", json=_event_payload(category_id)).status_code == 404
+    assert client.delete(f"{USER_EVENTS}/999999").status_code == 404
+
+
+def test_user_event_cannot_use_a_disabled_category():
+    category_id = _make_category("Se deshabilita")
+    current = client.get("/api/v1/checklists/categories").json()
+    remaining = [{"id": c["id"], "name": c["name"]} for c in current if c["id"] != category_id]
+    client.put("/api/v1/checklists/categories", json={"items": remaining})
+
+    response = client.post(USER_EVENTS, json=_event_payload(category_id))
+
+    assert response.status_code == 404
+
+
+def test_user_event_codes_lists_each_type_once_in_order():
+    category_id = _make_category("Tipos")
+    for code in ("TRAVEL", "birthday", "travel"):
+        client.post(USER_EVENTS, json=_event_payload(category_id, code=code))
+
+    codes = client.get("/api/v1/calendar-events/user-event-codes").json()
+
+    assert codes == sorted(set(codes))
+    assert {"BIRTHDAY", "TRAVEL"} <= set(codes)
+
+
+def test_database_rejects_a_lowercase_code(db_session):
+    category_id = _make_category("Check en base")
+
+    with pytest.raises(IntegrityError):
+        _insert(
+            db_session,
+            CldUserEvent,
+            user_id=1,
+            category_id=category_id,
+            code="travel",
+            first_day=_d(630),
+            last_day=_d(630),
+            name="Directo a la base",
+            detail=None,
+        )
+    db_session.rollback()

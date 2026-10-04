@@ -5,10 +5,11 @@ import math
 from datetime import date
 from decimal import Decimal
 
-from app.db.models.finance import Tag
+from app.db.models.finance import Category, PaymentMethod, Tag
 from app.repositories.expense_repository import ExpenseRepository
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.schemas.finance import (
+    CatalogStatus,
     ExpenseRead,
     ExpenseSummaryBucket,
     ExpenseSummaryGroupBy,
@@ -33,17 +34,33 @@ class ExpenseService:
         self._catalog_repository = catalog_repository
 
     def _validate_references(
-        self, *, user_id: int, category_id: int, payment_method_id: int, tag_ids: list[int]
+        self,
+        *,
+        user_id: int,
+        category_id: int,
+        payment_method_id: int,
+        tag_ids: list[int],
+        allow_archived: bool,
     ) -> list[Tag]:
         """Comun a create/update: valida que categoria, metodo de pago y tags
-        existan (los tags, ademas, del usuario) antes de tocar el repository."""
-        if self._catalog_repository.get_category(category_id) is None:
+        existan (los tags, ademas, del usuario) antes de tocar el repository.
+
+        Un item archivado (DISABLED) no sirve para un gasto nuevo, pero si al
+        editar uno viejo, para no obligar a cambiarle la categoria al corregir
+        el monto."""
+
+        def usable(item: Category | PaymentMethod | Tag | None) -> bool:
+            return item is not None and (
+                allow_archived or item.status == CatalogStatus.ENABLED.value
+            )
+
+        if not usable(self._catalog_repository.get_category(category_id)):
             raise ExpenseCategoryNotFoundError(category_id)
-        if self._catalog_repository.get_payment_method(payment_method_id) is None:
+        if not usable(self._catalog_repository.get_payment_method(payment_method_id)):
             raise PaymentMethodNotFoundError(payment_method_id)
 
         tags = self._catalog_repository.list_tags_by_ids(user_id, tag_ids)
-        missing_tag_ids = set(tag_ids) - {tag.id for tag in tags}
+        missing_tag_ids = set(tag_ids) - {tag.id for tag in tags if usable(tag)}
         if missing_tag_ids:
             raise TagNotFoundError(missing_tag_ids)
         return list(tags)
@@ -65,6 +82,7 @@ class ExpenseService:
             category_id=category_id,
             payment_method_id=payment_method_id,
             tag_ids=tag_ids,
+            allow_archived=False,
         )
 
         record = self._expense_repository.create(
@@ -97,6 +115,7 @@ class ExpenseService:
             category_id=category_id,
             payment_method_id=payment_method_id,
             tag_ids=tag_ids,
+            allow_archived=True,
         )
 
         record = self._expense_repository.update(

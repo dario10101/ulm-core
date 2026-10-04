@@ -18,10 +18,22 @@ class SqlAlchemyCldEventRepository:
         # rango, y termina despues de que el rango empieza.
         return (
             self._db.execute(
-                select(CldEvent).where(
-                    CldEvent.first_day <= range_end, CldEvent.last_day >= range_start
-                )
+                select(CldEvent)
+                .where(CldEvent.first_day <= range_end, CldEvent.last_day >= range_start)
+                .order_by(CldEvent.first_day, CldEvent.id)
             )
             .scalars()
             .all()
         )
+
+    def get(self, event_id: int) -> CldEvent | None:
+        return self._db.get(CldEvent, event_id)
+
+    def add(self, event: CldEvent) -> None:
+        self._db.add(event)
+
+    def delete(self, event: CldEvent) -> None:
+        self._db.delete(event)
+
+    def flush(self) -> None:
+        self._db.flush()

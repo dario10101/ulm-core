@@ -1,12 +1,13 @@
 """Interfaz (Protocol) del acceso a datos de los catalogos de finanzas
-(categorias, metodos de pago, tags). La capa de servicio depende solo de
-esto, nunca de una implementacion concreta (ver
+(categorias, metodos de pago, tags, fuentes y subcategorias de ingreso). La
+capa de servicio depende solo de esto, nunca de una implementacion concreta (ver
 app/repositories/weight_repository.py para el mismo patron).
 """
 
 from collections.abc import Sequence
 from typing import Protocol
 
+from app.db.base_class import Base
 from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
 
 
@@ -38,3 +39,42 @@ class FinanceCatalogRepository(Protocol):
     def get_income_subcategory(
         self, user_id: int, subcategory_id: int
     ) -> IncomeSubcategory | None: ...
+
+    # --- Administracion (Settings y "View records") ---
+
+    def list_all_categories(self) -> Sequence[Category]:
+        """Incluye las archivadas (DISABLED)."""
+        ...
+
+    def list_all_payment_methods(self) -> Sequence[PaymentMethod]: ...
+
+    def list_tags(self, user_id: int) -> Sequence[Tag]:
+        """Todos los tags del usuario, incluidos los archivados."""
+        ...
+
+    def get_tag(self, user_id: int, tag_id: int) -> Tag | None: ...
+
+    # Conteos de uso: id -> cantidad de registros que lo referencian. Un id
+    # sin registros no aparece en el dict.
+
+    def category_usage(self) -> dict[int, int]:
+        """De todos los usuarios: la categoria es un catalogo global."""
+        ...
+
+    def payment_method_usage(self) -> dict[int, int]: ...
+
+    def tag_usage(self, user_id: int) -> dict[int, int]:
+        """Gastos + ingresos directos + ingresos de intereses."""
+        ...
+
+    def source_usage(self, user_id: int) -> dict[int, tuple[int, int]]:
+        """id -> (ingresos directos, ingresos de intereses)."""
+        ...
+
+    def subcategory_usage(self, user_id: int) -> dict[int, int]: ...
+
+    def add(self, item: Base) -> None: ...
+
+    def delete(self, item: Base) -> None: ...
+
+    def flush(self) -> None: ...

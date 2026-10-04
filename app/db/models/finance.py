@@ -2,10 +2,10 @@
 pago, tags) y registros de gasto.
 
 Categorias y metodos de pago son catalogos globales (no dependen del
-usuario); tags son por usuario. Los tres son "soft delete" via `status`
-(ENABLED/DISABLED), igual que `ChecklistCategory` (ver app/db/models/checklist.py):
-nunca se borra una fila, para no perder la referencia historica desde
-fn_user_expenses/fn_expenses_tags.
+usuario); tags, fuentes y subcategorias son por usuario. Todos tienen `status`
+(ENABLED/DISABLED): un item con registros no se borra, se archiva (DISABLED),
+para no perder la referencia historica; uno sin registros si se borra de
+verdad (ver FinanceParamsService / SystemParamsService).
 """
 
 from datetime import UTC, date, datetime
@@ -115,6 +115,11 @@ class IncomeSource(Base):
     # Sin CHECK en la base (pedido explicito): el service valida el valor.
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # Mismo soft delete que los demas catalogos: una fuente con ingresos no se
+    # borra, se archiva (ver FinanceParamsService.delete_source).
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ENABLED", server_default="ENABLED"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -138,6 +143,9 @@ class IncomeSubcategory(Base):
     # conserva por ahora, pero ya no se usa para validar.
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ENABLED", server_default="ENABLED"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

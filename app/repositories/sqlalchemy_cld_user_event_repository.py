@@ -32,3 +32,29 @@ class SqlAlchemyCldUserEventRepository:
             .scalars()
             .all()
         )
+
+    def list_codes(self, *, user_id: int) -> list[str]:
+        return list(
+            self._db.execute(
+                select(CldUserEvent.code)
+                .where(CldUserEvent.user_id == user_id)
+                .distinct()
+                .order_by(CldUserEvent.code)
+            )
+            .scalars()
+            .all()
+        )
+
+    def get(self, event_id: int, *, user_id: int) -> CldUserEvent | None:
+        return self._db.execute(
+            select(CldUserEvent).where(CldUserEvent.id == event_id, CldUserEvent.user_id == user_id)
+        ).scalar_one_or_none()
+
+    def add(self, event: CldUserEvent) -> None:
+        self._db.add(event)
+
+    def delete(self, event: CldUserEvent) -> None:
+        self._db.delete(event)
+
+    def flush(self) -> None:
+        self._db.flush()

@@ -8,17 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_current_user, require
+from app.api.deps import get_current_user, require, require_admin
 from app.api.routes import (
     auth,
     calendar_events,
     checklists,
     cld_tasks,
     expenses,
+    finance_params,
     health,
     incomes,
     me,
     meals,
+    system_params,
     weights,
 )
 from app.core.config import settings
@@ -96,11 +98,18 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # nada. tests/test_auth.py falla si aparece una ruta privada sin esa dependencia.
 PUBLIC_ROUTERS = (health.router, auth.router)
 
-# Router privado -> permiso de dominio que exige (None: solo sesion). Igual
-# que con la sesion, se exige a nivel de router: tests/test_permissions.py
-# falla si una ruta privada (salvo /me) no pide ningun permiso.
+# Exigencia de los parametros globales del sistema: el admin (ADMIN_EMAILS),
+# no un permiso de dominio.
+ADMIN_ONLY = "admin"
+
+# Router privado -> permiso de dominio que exige (None: solo sesion;
+# ADMIN_ONLY: solo el admin). Igual que con la sesion, se exige a nivel de
+# router: tests/test_permissions.py falla si una ruta privada (salvo /me) no
+# pide ningun permiso.
 PRIVATE_ROUTERS = (
     (me.router, None),
+    (system_params.router, ADMIN_ONLY),
+    (finance_params.router, Permission.FINANCES),
     (weights.router, Permission.WEIGHT),
     (meals.router, Permission.MEALS),
     (expenses.router, Permission.FINANCES),
@@ -112,10 +121,12 @@ PRIVATE_ROUTERS = (
 
 for router in PUBLIC_ROUTERS:
     app.include_router(router, prefix=settings.api_prefix)
-for router, permission in PRIVATE_ROUTERS:
+for router, requirement in PRIVATE_ROUTERS:
     dependencies = [Depends(get_current_user)]
-    if permission is not None:
-        dependencies.append(Depends(require(permission)))
+    if requirement == ADMIN_ONLY:
+        dependencies.append(Depends(require_admin))
+    elif requirement is not None:
+        dependencies.append(Depends(require(requirement)))
     app.include_router(router, prefix=settings.api_prefix, dependencies=dependencies)
 
 

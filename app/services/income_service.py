@@ -5,7 +5,7 @@ import math
 from datetime import date
 from decimal import Decimal
 
-from app.db.models.finance import DirectIncome, Tag
+from app.db.models.finance import DirectIncome, IncomeSource, IncomeSubcategory, Tag
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.repositories.income_repository import (
     IncomeFilters,
@@ -13,6 +13,7 @@ from app.repositories.income_repository import (
     InterestIncomeRepository,
 )
 from app.schemas.finance import (
+    CatalogStatus,
     DirectIncomeCreate,
     DirectIncomeRead,
     IncomeKind,
@@ -38,6 +39,10 @@ def _applies_to(catalog_type: str, kind: IncomeKind) -> bool:
     return catalog_type in (kind.value, IncomeKind.ALL.value)
 
 
+def _usable(item: IncomeSource | IncomeSubcategory | Tag, allow_archived: bool) -> bool:
+    return allow_archived or item.status == CatalogStatus.ENABLED.value
+
+
 class IncomeService:
     def __init__(
         self,
@@ -54,10 +59,12 @@ class IncomeService:
             sources=[
                 IncomeSourceRead.model_validate(s)
                 for s in self._catalog_repository.list_income_sources(user_id)
+                if s.status == CatalogStatus.ENABLED.value
             ],
             subcategories=[
                 IncomeSubcategoryRead.model_validate(s)
                 for s in self._catalog_repository.list_income_subcategories(user_id)
+                if s.status == CatalogStatus.ENABLED.value
             ],
             tags=[
                 TagRead.model_validate(t)
@@ -83,20 +90,33 @@ class IncomeService:
         source_id: int,
         subcategory_id: int,
         tag_ids: list[int],
+        allow_archived: bool,
     ) -> list[Tag]:
         """La fuente debe ser del usuario y aplicar a este tipo de ingreso (una
         fuente INTEREST no sirve para un ingreso directo), y la subcategoria
         debe pertenecer a esa fuente. El `type` de la subcategoria no se mira:
-        lo determina su fuente."""
+        lo determina su fuente.
+
+        Un item archivado no sirve para un registro nuevo, pero si al editar
+        uno viejo: si no, corregir el monto de un ingreso de una fuente
+        archivada obligaria a cambiarle la fuente."""
         source = self._catalog_repository.get_income_source(user_id, source_id)
-        if source is None or not _applies_to(source.type, kind):
+        if (
+            source is None
+            or not _applies_to(source.type, kind)
+            or not _usable(source, allow_archived)
+        ):
             raise IncomeSourceNotFoundError(source_id)
         subcategory = self._catalog_repository.get_income_subcategory(user_id, subcategory_id)
-        if subcategory is None or subcategory.source_id != source_id:
+        if (
+            subcategory is None
+            or subcategory.source_id != source_id
+            or not _usable(subcategory, allow_archived)
+        ):
             raise IncomeSubcategoryNotFoundError(subcategory_id)
 
         tags = self._catalog_repository.list_tags_by_ids(user_id, tag_ids)
-        missing_tag_ids = set(tag_ids) - {tag.id for tag in tags}
+        missing_tag_ids = set(tag_ids) - {tag.id for tag in tags if _usable(tag, allow_archived)}
         if missing_tag_ids:
             raise TagNotFoundError(missing_tag_ids)
         return list(tags)
@@ -114,6 +134,7 @@ class IncomeService:
             source_id=payload.source_id,
             subcategory_id=payload.subcategory_id,
             tag_ids=payload.tag_ids,
+            allow_archived=False,
         )
         record = self._direct_repository.create(
             user_id=user_id, fields=payload.model_dump(exclude={"tag_ids"}), tags=tags
@@ -129,6 +150,7 @@ class IncomeService:
             source_id=payload.source_id,
             subcategory_id=payload.subcategory_id,
             tag_ids=payload.tag_ids,
+            allow_archived=True,
         )
         record = self._direct_repository.update(
             record_id, user_id=user_id, fields=payload.model_dump(exclude={"tag_ids"}), tags=tags
@@ -160,6 +182,7 @@ class IncomeService:
             source_id=payload.source_id,
             subcategory_id=payload.subcategory_id,
             tag_ids=payload.tag_ids,
+            allow_archived=record_id is not None,
         )
         # El registro es del mes, no de un dia: se normaliza al dia 1 para que
         # la unicidad (fuente, mes) sea una comparacion de igualdad.
