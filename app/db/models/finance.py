@@ -195,11 +195,16 @@ class InterestIncome(Base):
 
     __tablename__ = "fn_user_interest_incomes"
     __table_args__ = (
+        # Uno por subcategoria y mes: las subcategorias de una fuente de
+        # intereses son productos/bolsillos distintos (ej. Tyba "MI CARRO" y
+        # "MI RETIRO"), cada uno con su propio saldo. Nombre explicito: el de
+        # la convencion pasaria los 63 caracteres de Postgres.
         UniqueConstraint(
             "user_id",
             "source_id",
+            "subcategory_id",
             "recorded_on",
-            name="uq_fn_user_interest_incomes_user_id_source_id_recorded_on",
+            name="uq_fn_user_interest_incomes_subcategory_period",
         ),
         Index("ix_fn_user_interest_incomes_user_recorded_on", "user_id", "recorded_on"),
     )

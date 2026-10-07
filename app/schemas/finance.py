@@ -97,8 +97,15 @@ class ExpenseOptionsRead(BaseModel):
     tags: list[TagRead]
 
 
+ExpenseName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200, to_upper=True)
+]
+
+
 class ExpenseCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    # Siempre en mayusculas al guardar (to_upper), asi que no importa como
+    # lo tipee el usuario: la busqueda/comparacion en reportes es consistente.
+    name: ExpenseName
     amount: float = Field(gt=0, description="Monto en COP")
     recorded_on: date
     note: str | None = Field(default=None, max_length=2000)
@@ -141,6 +148,14 @@ class ExpenseSummaryGroupBy(str, Enum):
     YEAR = "year"
 
 
+class ExpenseSummarySegment(BaseModel):
+    key: str
+    label: str
+    icon_key: str | None
+    color_key: str | None
+    total: float
+
+
 class ExpenseSummaryBucket(BaseModel):
     key: str
     label: str
@@ -148,6 +163,8 @@ class ExpenseSummaryBucket(BaseModel):
     color_key: str | None
     total: float
     count: int
+    # Solo en month/year: desglose del periodo por categoria (mayor a menor).
+    segments: list[ExpenseSummarySegment] = Field(default_factory=list)
 
 
 class ExpenseSummaryRead(BaseModel):
@@ -224,6 +241,8 @@ class InterestEndBalance(BaseModel):
     anterior" sin otro request al cambiar de periodo en el formulario."""
 
     source_id: int
+    # El saldo es de un producto/bolsillo: "mes anterior" se busca por subcategoria.
+    subcategory_id: int
     period: str  # "YYYY-MM"
     end_of_month_amount: float
 

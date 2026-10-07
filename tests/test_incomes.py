@@ -27,6 +27,8 @@ def _seed(db_session, *, user_id: int = 1) -> dict[str, int]:
         "extra": sub(salary, "EXTRA"),
         "sale_extra": sub(sale, "EXTRA"),
         "yield": sub(tyba, "RENDIMIENTOS"),
+        # Segundo producto de la misma fuente: puede tener su propio registro mensual.
+        "car": sub(tyba, "MI CARRO"),
     }
     db_session.add_all(rows.values())
     db_session.commit()
@@ -77,10 +79,16 @@ def test_options_return_catalogs_and_end_balances_in_one_call(db_session):
         ("EXTRA", ids["salary"]),
         ("EXTRA", ids["sale"]),
         ("RENDIMIENTOS", ids["tyba"]),
+        ("MI CARRO", ids["tyba"]),
     ]
     assert [t["id"] for t in body["tags"]] == [ids["tag"]]
     assert body["interest_end_balances"] == [
-        {"source_id": ids["tyba"], "period": "2026-08", "end_of_month_amount": 3550000}
+        {
+            "source_id": ids["tyba"],
+            "subcategory_id": ids["yield"],
+            "period": "2026-08",
+            "end_of_month_amount": 3550000,
+        }
     ]
 
 
@@ -217,7 +225,7 @@ def test_interest_income_balances_are_optional(db_session):
     assert response.json()["withdrawals_amount"] == 0
 
 
-def test_interest_income_one_per_source_and_month(db_session):
+def test_interest_income_one_per_subcategory_and_month(db_session):
     ids = _seed(db_session)
     first = client.post("/api/v1/incomes/interest", json=_interest_payload(ids)).json()
     second = client.post(
@@ -228,6 +236,12 @@ def test_interest_income_one_per_source_and_month(db_session):
         "/api/v1/incomes/interest", json=_interest_payload(ids, recorded_on="2026-08-31")
     )
     assert duplicate.status_code == 409
+
+    # Otra subcategoria de la misma fuente (otro producto) si puede tener ese mes.
+    other_product = client.post(
+        "/api/v1/incomes/interest", json=_interest_payload(ids, subcategory_id=ids["car"])
+    )
+    assert other_product.status_code == 201
 
     # Editar el mismo registro sin cambiar de mes no choca consigo mismo...
     same = client.put(

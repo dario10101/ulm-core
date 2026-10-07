@@ -8,7 +8,11 @@ from sqlalchemy import ColumnElement, extract, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.finance import Category, Expense, ExpenseTag, PaymentMethod, Tag
-from app.repositories.expense_repository import ExpenseGroupBy, ExpenseSummaryRow
+from app.repositories.expense_repository import (
+    ExpenseGroupBy,
+    ExpenseSummaryRow,
+    ExpenseSummarySegmentRow,
+)
 
 
 def _filter_conditions(
@@ -40,6 +44,13 @@ def _filter_conditions(
     if max_amount is not None:
         conditions.append(Expense.amount <= max_amount)
     return conditions
+
+
+def _period_key(parts: Sequence[object]) -> str:
+    """("2026", "9") -> "2026-09"; ("2026",) -> "2026"."""
+    return "-".join(
+        f"{int(part):04d}" if i == 0 else f"{int(part):02d}" for i, part in enumerate(parts)
+    )
 
 
 class SqlAlchemyExpenseRepository:
@@ -192,14 +203,40 @@ class SqlAlchemyExpenseRepository:
                 .group_by(*period)
                 .order_by(*period)
             )
+            # Desglose por categoria de cada periodo (para columnas apiladas):
+            # una consulta aparte agrupada por periodo + categoria.
+            segments: dict[str, list[ExpenseSummarySegmentRow]] = {}
+            breakdown = self._db.execute(
+                select(
+                    *period,
+                    Category.id,
+                    Category.name,
+                    Category.icon_key,
+                    Category.color_key,
+                    total_amount,
+                )
+                .join(Category, Expense.category_id == Category.id)
+                .where(*conditions)
+                .group_by(
+                    *period, Category.id, Category.name, Category.icon_key, Category.color_key
+                )
+                .order_by(*period, total_amount.desc())
+            )
+            for row in breakdown:
+                *parts, id_, name, icon, color, total = row
+                segments.setdefault(_period_key(parts), []).append(
+                    ExpenseSummarySegmentRow(str(id_), name, icon, color, total)
+                )
+
             rows = []
             for row in result:
                 *parts, total, count = row
-                key = "-".join(
-                    f"{int(part):04d}" if i == 0 else f"{int(part):02d}"
-                    for i, part in enumerate(parts)
+                key = _period_key(parts)
+                rows.append(
+                    ExpenseSummaryRow(
+                        key, key, None, None, total, count, tuple(segments.get(key, ()))
+                    )
                 )
-                rows.append(ExpenseSummaryRow(key, key, None, None, total, count))
 
         grand_total, grand_count = self._db.execute(
             select(func.coalesce(total_amount, 0), func.count(Expense.id)).where(*conditions)

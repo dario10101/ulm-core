@@ -73,11 +73,12 @@ class IncomeService:
             interest_end_balances=[
                 InterestEndBalance(
                     source_id=source_id,
+                    subcategory_id=subcategory_id,
                     period=recorded_on.strftime("%Y-%m"),
                     end_of_month_amount=float(amount),
                 )
-                for source_id, recorded_on, amount in self._interest_repository.list_end_balances(
-                    user_id=user_id
+                for source_id, subcategory_id, recorded_on, amount in (
+                    self._interest_repository.list_end_balances(user_id=user_id)
                 )
             ],
         )
@@ -185,10 +186,13 @@ class IncomeService:
             allow_archived=record_id is not None,
         )
         # El registro es del mes, no de un dia: se normaliza al dia 1 para que
-        # la unicidad (fuente, mes) sea una comparacion de igualdad.
+        # la unicidad (fuente, subcategoria, mes) sea una comparacion de igualdad.
         period_start = payload.recorded_on.replace(day=1)
         existing_id = self._interest_repository.find_period(
-            user_id=user_id, source_id=payload.source_id, period_start=period_start
+            user_id=user_id,
+            source_id=payload.source_id,
+            subcategory_id=payload.subcategory_id,
+            period_start=period_start,
         )
         if existing_id is not None and existing_id != record_id:
             raise InterestPeriodTakenError()

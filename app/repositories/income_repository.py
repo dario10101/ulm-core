@@ -50,10 +50,13 @@ class IncomeRepository(Protocol[IncomeRecord]):
 
 
 class InterestIncomeRepository(IncomeRepository[InterestIncome], Protocol):
-    def find_period(self, *, user_id: int, source_id: int, period_start: date) -> int | None:
-        """Id del registro de esa fuente en ese mes, si existe."""
+    def find_period(
+        self, *, user_id: int, source_id: int, subcategory_id: int, period_start: date
+    ) -> int | None:
+        """Id del registro de esa fuente y subcategoria en ese mes, si existe."""
         ...
 
-    def list_end_balances(self, *, user_id: int) -> Sequence[tuple[int, date, Decimal]]:
-        """(source_id, recorded_on, end_of_month_amount) de los meses con saldo final."""
+    def list_end_balances(self, *, user_id: int) -> Sequence[tuple[int, int, date, Decimal]]:
+        """(source_id, subcategory_id, recorded_on, end_of_month_amount) de los
+        meses con saldo final."""
         ...

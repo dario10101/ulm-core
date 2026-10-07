@@ -14,6 +14,7 @@ from app.schemas.finance import (
     ExpenseSummaryBucket,
     ExpenseSummaryGroupBy,
     ExpenseSummaryRead,
+    ExpenseSummarySegment,
 )
 from app.services.errors import (
     ExpenseCategoryNotFoundError,
@@ -204,6 +205,16 @@ class ExpenseService:
                     color_key=row.color_key,
                     total=float(row.total),
                     count=row.count,
+                    segments=[
+                        ExpenseSummarySegment(
+                            key=segment.key,
+                            label=segment.label,
+                            icon_key=segment.icon_key,
+                            color_key=segment.color_key,
+                            total=float(segment.total),
+                        )
+                        for segment in row.segments
+                    ],
                 )
                 for row in rows
             ],

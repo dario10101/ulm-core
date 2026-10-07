@@ -61,7 +61,8 @@ def test_create_expense(db_session):
 
     assert response.status_code == 201
     body = response.json()
-    assert body["name"] == "Mercado"
+    # El nombre se normaliza a mayusculas al guardar (ver ExpenseName).
+    assert body["name"] == "MERCADO"
     assert body["amount"] == 25000
     assert body["recorded_on"] == "2026-09-26"
     assert body["note"] == "Mercado de la semana"
@@ -206,7 +207,7 @@ def test_update_and_delete_expense(db_session):
     )
     assert update_response.status_code == 200
     updated = update_response.json()
-    assert updated["name"] == "Gasolina"
+    assert updated["name"] == "GASOLINA"
     assert updated["amount"] == 40000
     assert updated["category"]["id"] == other_category.id
     assert updated["note"] == "ajustado"
@@ -320,12 +321,12 @@ def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(d
     )
 
     by_category = client.get("/api/v1/expenses/", params={"category_ids": [category_id]}).json()
-    assert [item["name"] for item in by_category["items"]] == ["Mercado"]
+    assert [item["name"] for item in by_category["items"]] == ["MERCADO"]
 
     by_payment_method = client.get(
         "/api/v1/expenses/", params={"payment_method_ids": [payment_method_id]}
     ).json()
-    assert [item["name"] for item in by_payment_method["items"]] == ["Mercado"]
+    assert [item["name"] for item in by_payment_method["items"]] == ["MERCADO"]
 
     # Multi-seleccion: cualquiera de los ids coincide.
     by_both_categories = client.get(
@@ -334,12 +335,12 @@ def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(d
     assert by_both_categories["total"] == 2
 
     by_tag = client.get("/api/v1/expenses/", params={"tag_ids": [tag_id]}).json()
-    assert [item["name"] for item in by_tag["items"]] == ["Mercado"]
+    assert [item["name"] for item in by_tag["items"]] == ["MERCADO"]
 
     by_amount_range = client.get(
         "/api/v1/expenses/", params={"min_amount": 10000, "max_amount": 30000}
     ).json()
-    assert [item["name"] for item in by_amount_range["items"]] == ["Mercado"]
+    assert [item["name"] for item in by_amount_range["items"]] == ["MERCADO"]
 
     combined = client.get(
         "/api/v1/expenses/",
@@ -427,9 +428,18 @@ def test_summarize_expenses_groups_by_each_dimension(db_session):
         ("2025-12", 10000),
         ("2026-01", 25000),
     ]
+    # Cada periodo trae su desglose por categoria (mayor a menor), para apilar.
+    assert [
+        (s["label"], s["total"], s["color_key"]) for s in by_month["buckets"][1]["segments"]
+    ] == [
+        ("Groceries", 20000, "lime"),
+        ("Transport", 5000, "sky"),
+    ]
+    assert by_category["buckets"][0]["segments"] == []
 
     by_year = summary("year")
     assert [(b["key"], b["count"]) for b in by_year["buckets"]] == [("2025", 1), ("2026", 2)]
+    assert [s["total"] for s in by_year["buckets"][1]["segments"]] == [20000, 5000]
 
     # Los filtros son los mismos del listado.
     filtered = summary("category", start_date="2026-01-01", category_ids=[category_id])
@@ -440,3 +450,21 @@ def test_summarize_expenses_groups_by_each_dimension(db_session):
 def test_summarize_expenses_rejects_unknown_group_by():
     response = client.get("/api/v1/expenses/summary", params={"group_by": "weekday"})
     assert response.status_code == 422
+
+
+def test_expense_name_is_stored_in_uppercase(db_session):
+    category_id, payment_method_id, _tag_id = _seed_catalog(db_session)
+
+    response = client.post(
+        "/api/v1/expenses/",
+        json={
+            "name": "  mercado de la semana  ",
+            "amount": 1000,
+            "recorded_on": "2026-09-26",
+            "payment_method_id": payment_method_id,
+            "category_id": category_id,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "MERCADO DE LA SEMANA"

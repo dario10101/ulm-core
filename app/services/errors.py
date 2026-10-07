@@ -210,10 +210,12 @@ class IncomeSubcategoryNotFoundError(NotFoundError):
 
 
 class InterestPeriodTakenError(ConflictError):
-    """Ya hay un registro de intereses para esa fuente en ese mes."""
+    """Ya hay un registro de intereses para esa fuente y subcategoria en ese mes."""
 
     def __init__(self) -> None:
-        super().__init__("Ya existe un registro de intereses para esa fuente en ese mes")
+        super().__init__(
+            "Ya existe un registro de intereses para esa fuente y subcategoria en ese mes"
+        )
 
 
 # --- Administracion de catalogos (tags, categorias, fuentes...) ---

@@ -14,9 +14,20 @@ from app.db.models.finance import Expense, Tag
 ExpenseGroupBy = Literal["category", "tag", "payment_method", "month", "year"]
 
 
+class ExpenseSummarySegmentRow(NamedTuple):
+    """Total de una categoria dentro de un periodo (columnas apiladas)."""
+
+    key: str
+    label: str
+    icon_key: str | None
+    color_key: str | None
+    total: Decimal
+
+
 class ExpenseSummaryRow(NamedTuple):
     """Un grupo agregado. `key` es el id (categoria/metodo/tag, "none" para
-    gastos sin tag) o el periodo ("2026-09" / "2026")."""
+    gastos sin tag) o el periodo ("2026-09" / "2026"). Solo los periodos
+    (month/year) traen `segments`: su desglose por categoria."""
 
     key: str
     label: str
@@ -24,6 +35,7 @@ class ExpenseSummaryRow(NamedTuple):
     color_key: str | None
     total: Decimal
     count: int
+    segments: tuple[ExpenseSummarySegmentRow, ...] = ()
 
 
 class ExpenseRepository(Protocol):

@@ -96,19 +96,23 @@ class SqlAlchemyInterestIncomeRepository(SqlAlchemyIncomeRepository[InterestInco
     def __init__(self, db: Session) -> None:
         super().__init__(db, InterestIncome)
 
-    def find_period(self, *, user_id: int, source_id: int, period_start: date) -> int | None:
+    def find_period(
+        self, *, user_id: int, source_id: int, subcategory_id: int, period_start: date
+    ) -> int | None:
         return self._db.scalar(
             select(InterestIncome.id).where(
                 InterestIncome.user_id == user_id,
                 InterestIncome.source_id == source_id,
+                InterestIncome.subcategory_id == subcategory_id,
                 InterestIncome.recorded_on == period_start,
             )
         )
 
-    def list_end_balances(self, *, user_id: int) -> Sequence[tuple[int, date, Decimal]]:
+    def list_end_balances(self, *, user_id: int) -> Sequence[tuple[int, int, date, Decimal]]:
         rows = self._db.execute(
             select(
                 InterestIncome.source_id,
+                InterestIncome.subcategory_id,
                 InterestIncome.recorded_on,
                 InterestIncome.end_of_month_amount,
             )
@@ -118,4 +122,4 @@ class SqlAlchemyInterestIncomeRepository(SqlAlchemyIncomeRepository[InterestInco
             )
             .order_by(InterestIncome.recorded_on)
         )
-        return [(source_id, recorded_on, amount) for source_id, recorded_on, amount in rows]
+        return [tuple(row) for row in rows]
