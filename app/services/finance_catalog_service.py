@@ -13,7 +13,8 @@ class FinanceCatalogService:
     def get_options(self, *, user_id: int) -> ExpenseOptionsRead:
         return ExpenseOptionsRead(
             categories=[
-                CategoryRead.model_validate(c) for c in self._repository.list_enabled_categories()
+                CategoryRead.model_validate(c)
+                for c in self._repository.list_enabled_categories(user_id)
             ],
             payment_methods=[
                 PaymentMethodRead.model_validate(p)

@@ -22,6 +22,8 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.integrations.google_oauth import GoogleOAuthClient, HttpGoogleOAuthClient
 from app.integrations.holiday_provider import HolidayProvider, PythonHolidaysProvider
+from app.integrations.openai_client import OpenAiTextGenerator, TextGenerator
+from app.repositories.blog_entity_repository import BlogEntityRepository
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
@@ -31,6 +33,7 @@ from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.repositories.income_repository import IncomeRepository, InterestIncomeRepository
 from app.repositories.income_summary_repository import IncomeSummaryRepository
 from app.repositories.meal_repository import MealRepository
+from app.repositories.sqlalchemy_blog_entity_repository import SqlAlchemyBlogEntityRepository
 from app.repositories.sqlalchemy_category_repository import SqlAlchemyCategoryRepository
 from app.repositories.sqlalchemy_cld_event_repository import SqlAlchemyCldEventRepository
 from app.repositories.sqlalchemy_cld_task_repository import SqlAlchemyCldTaskRepository
@@ -71,7 +74,9 @@ from app.repositories.user_session_repository import UserSessionRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
 from app.repositories.week_repository import WeekRepository
 from app.repositories.weight_repository import WeightRepository
+from app.services.ai_chat_service import AiChatService
 from app.services.auth_service import AuthService
+from app.services.blog_admin_service import BlogAdminService
 from app.services.blog_service import BlogService
 from app.services.calendar_admin_service import CalendarAdminService
 from app.services.calendar_event_service import CalendarEventService
@@ -118,12 +123,17 @@ def get_user_permission_repository(db: Session = Depends(get_db)) -> UserPermiss
     return SqlAlchemyUserPermissionRepository(db)
 
 
+def get_finance_catalog_repository(db: Session = Depends(get_db)) -> FinanceCatalogRepository:
+    return SqlAlchemyFinanceCatalogRepository(db)
+
+
 def get_user_admin_service(
     users: UserRepository = Depends(get_user_repository),
     sessions: UserSessionRepository = Depends(get_user_session_repository),
     permissions: UserPermissionRepository = Depends(get_user_permission_repository),
+    finance_catalog: FinanceCatalogRepository = Depends(get_finance_catalog_repository),
 ) -> UserAdminService:
-    return UserAdminService(users, sessions, permissions)
+    return UserAdminService(users, sessions, permissions, finance_catalog)
 
 
 def get_auth_service(
@@ -135,11 +145,16 @@ def get_auth_service(
     return AuthService(users, sessions, user_admin, google)
 
 
+def get_blog_entity_repository(db: Session = Depends(get_db)) -> BlogEntityRepository:
+    return SqlAlchemyBlogEntityRepository(db)
+
+
 def get_blog_service(
     users: UserRepository = Depends(get_user_repository),
     user_admin: UserAdminService = Depends(get_user_admin_service),
+    blog: BlogEntityRepository = Depends(get_blog_entity_repository),
 ) -> BlogService:
-    return BlogService(users, user_admin)
+    return BlogService(users, user_admin, blog)
 
 
 def get_current_user(
@@ -228,10 +243,6 @@ def get_meal_service(
     repository: MealRepository = Depends(get_meal_repository),
 ) -> MealService:
     return MealService(repository)
-
-
-def get_finance_catalog_repository(db: Session = Depends(get_db)) -> FinanceCatalogRepository:
-    return SqlAlchemyFinanceCatalogRepository(db)
 
 
 def get_finance_catalog_service(
@@ -412,3 +423,26 @@ def get_calendar_admin_service(
     holidays: HolidayProvider = Depends(get_holiday_provider),
 ) -> CalendarAdminService:
     return CalendarAdminService(repository, holidays)
+
+
+@lru_cache
+def get_text_generator() -> TextGenerator | None:
+    """Uno solo por proceso (reutiliza las conexiones HTTP a OpenAI). None sin
+    OPENAI_API_KEY: AiChatService lo traduce a 503 en vez de fallar contra OpenAI."""
+    if not settings.openai_api_key:
+        return None
+    return OpenAiTextGenerator(
+        api_key=settings.openai_api_key, timeout_seconds=settings.openai_timeout_seconds
+    )
+
+
+def get_ai_chat_service(
+    generator: TextGenerator | None = Depends(get_text_generator),
+) -> AiChatService:
+    return AiChatService(generator, default_model=settings.openai_model)
+
+
+def get_blog_admin_service(
+    repository: BlogEntityRepository = Depends(get_blog_entity_repository),
+) -> BlogAdminService:
+    return BlogAdminService(repository)

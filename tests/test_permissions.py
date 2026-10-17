@@ -11,6 +11,9 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.models.user import UserPermission
 from app.main import PUBLIC_ROUTERS, app
+from app.repositories.sqlalchemy_finance_catalog_repository import (
+    SqlAlchemyFinanceCatalogRepository,
+)
 from app.repositories.sqlalchemy_user_permission_repository import (
     SqlAlchemyUserPermissionRepository,
 )
@@ -37,6 +40,7 @@ DOMAIN_ENDPOINTS = [
     ("/incomes/direct", Permission.FINANCES),
     ("/finances/tags", Permission.FINANCES),
     ("/checklists/categories", Permission.PLANNING),
+    ("/blog/sections", Permission.BLOG),
     ("/calendar-tasks?date=2026-10-01", Permission.PLANNING),
     ("/calendar-events?first_day=2026-10-01&last_day=2026-10-07", Permission.PLANNING),
 ]
@@ -48,6 +52,7 @@ def service(db_session) -> UserAdminService:
         SqlAlchemyUserRepository(db_session),
         SqlAlchemyUserSessionRepository(db_session),
         SqlAlchemyUserPermissionRepository(db_session),
+        SqlAlchemyFinanceCatalogRepository(db_session),
     )
 
 
@@ -261,6 +266,7 @@ def test_system_routes_open_for_the_admin(monkeypatch):
         ("/checklists", Permission.PLANNING),
         ("/calendar-tasks", Permission.PLANNING),
         ("/calendar-events", Permission.PLANNING),
+        ("/ai", Permission.AI),
     ],
 )
 def test_each_router_requires_the_right_permission(prefix, permission):

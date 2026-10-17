@@ -72,7 +72,7 @@ class TagAdminRead(TagRead):
 
 
 class IconCatalogWrite(BaseModel):
-    """Categoria de gasto o metodo de pago (mismos campos)."""
+    """Categoria de gasto del usuario o metodo de pago (mismos campos)."""
 
     name: Annotated[CatalogName, Field(max_length=120)]
     icon_key: str = Field(min_length=1, max_length=60)
@@ -86,6 +86,21 @@ class CategoryAdminRead(CategoryRead):
 
 class PaymentMethodAdminRead(PaymentMethodRead):
     usage_count: int
+
+
+class DefaultCategoryWrite(BaseModel):
+    """Categoria de la plantilla para usuarios nuevos: sin status, porque
+    no se archiva (ningun gasto la referencia)."""
+
+    name: Annotated[CatalogName, Field(max_length=120)]
+    icon_key: str = Field(min_length=1, max_length=60)
+    color_key: str = Field(min_length=1, max_length=30)
+
+
+class DefaultCategoryRead(DefaultCategoryWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
 
 
 class ExpenseOptionsRead(BaseModel):

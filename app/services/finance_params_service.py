@@ -1,6 +1,6 @@
 """Parametros del dominio de finanzas que administra cada usuario sobre sus
-propios datos: tags (compartidos por gastos e ingresos), fuentes y
-subcategorias de ingreso. Los abre el permiso `finances`, no el admin.
+propios datos: categorias de gasto, tags (compartidos por gastos e ingresos),
+fuentes y subcategorias de ingreso. Los abre el permiso `finances`, no el admin.
 
 Borrado hibrido (ver catalog_rules.delete_or_archive): sin registros se borra,
 con registros se archiva. Un item archivado deja de ofrecerse en los
@@ -8,10 +8,13 @@ formularios pero los registros viejos lo siguen mostrando; se restaura
 mandando status=ENABLED en el update.
 """
 
-from app.db.models.finance import IncomeSource, IncomeSubcategory, Tag
+from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, Tag
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.schemas.finance import (
     CatalogDeleteResult,
+    CategoryAdminRead,
+    CategoryRead,
+    IconCatalogWrite,
     IncomeKind,
     IncomeSourceAdminRead,
     IncomeSourceRead,
@@ -34,6 +37,66 @@ def _source_accepts(source_type: IncomeKind, kind: IncomeKind) -> bool:
 class FinanceParamsService:
     def __init__(self, repository: FinanceCatalogRepository) -> None:
         self._repository = repository
+
+    # --- Categorias de gasto ---
+
+    def list_categories(self, *, user_id: int) -> list[CategoryAdminRead]:
+        usage = self._repository.category_usage(user_id)
+        return [
+            self._category_read(c, usage.get(c.id, 0))
+            for c in self._repository.list_categories(user_id)
+        ]
+
+    def create_category(self, *, user_id: int, payload: IconCatalogWrite) -> CategoryAdminRead:
+        ensure_unique_name(payload.name, self._repository.list_categories(user_id))
+        category = Category(
+            user_id=user_id,
+            name=payload.name,
+            icon_key=payload.icon_key,
+            color_key=payload.color_key,
+            status=payload.status.value,
+        )
+        self._repository.add(category)
+        self._repository.flush()
+        return self._category_read(category, 0)
+
+    def update_category(
+        self, category_id: int, *, user_id: int, payload: IconCatalogWrite
+    ) -> CategoryAdminRead:
+        category = self._get_category(user_id, category_id)
+        ensure_unique_name(
+            payload.name, self._repository.list_categories(user_id), exclude_id=category.id
+        )
+        category.name = payload.name
+        category.icon_key = payload.icon_key
+        category.color_key = payload.color_key
+        category.status = payload.status.value
+        self._repository.flush()
+        return self._category_read(
+            category, self._repository.category_usage(user_id).get(category.id, 0)
+        )
+
+    def delete_category(self, category_id: int, *, user_id: int) -> CatalogDeleteResult:
+        category = self._get_category(user_id, category_id)
+        result = delete_or_archive(
+            category,
+            usage_count=self._repository.category_usage(user_id).get(category.id, 0),
+            delete=self._repository.delete,
+        )
+        self._repository.flush()
+        return result
+
+    def _get_category(self, user_id: int, category_id: int) -> Category:
+        category = self._repository.get_category(user_id, category_id)
+        if category is None:
+            raise CatalogItemNotFoundError("Categoria", category_id)
+        return category
+
+    @staticmethod
+    def _category_read(category: Category, usage_count: int) -> CategoryAdminRead:
+        return CategoryAdminRead(
+            **CategoryRead.model_validate(category).model_dump(), usage_count=usage_count
+        )
 
     # --- Tags ---
 

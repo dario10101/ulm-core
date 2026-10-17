@@ -1,5 +1,5 @@
-"""Parametros de finanzas que administra cada usuario: tags, fuentes y
-subcategorias de ingreso (/finances/*). Borrado hibrido, unicidad de nombres,
+"""Parametros de finanzas que administra cada usuario: categorias de gasto,
+tags, fuentes y subcategorias de ingreso (/finances/*). Borrado hibrido, unicidad de nombres,
 bloqueos que protegen registros existentes y aislamiento entre usuarios."""
 
 from datetime import date
@@ -50,7 +50,9 @@ def _direct_income(db_session, source, subcategory, tags=()) -> DirectIncome:
 
 
 def _expense_with_tag(db_session, tag: Tag) -> None:
-    category = Category(name="Groceries", icon_key="shopping-cart", color_key="lime")
+    category = Category(
+        user_id=tag.user_id, name="Groceries", icon_key="shopping-cart", color_key="lime"
+    )
     method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
     db_session.add_all([category, method])
     db_session.flush()
@@ -66,6 +68,76 @@ def _expense_with_tag(db_session, tag: Tag) -> None:
         )
     )
     db_session.commit()
+
+
+# --- Categorias de gasto ---
+
+CATEGORY = {"name": "Pets", "icon_key": "paw-print", "color_key": "amber"}
+
+
+def test_category_crud_with_usage_count(db_session):
+    created = client.post(f"{API}/expense-categories", json={**CATEGORY, "name": " Pets "})
+    assert created.status_code == 201
+    category = created.json()
+    assert category["name"] == "Pets"
+    assert (category["status"], category["usage_count"]) == ("ENABLED", 0)
+    duplicate = client.post(f"{API}/expense-categories", json={**CATEGORY, "name": "PETS"})
+    assert duplicate.status_code == 409
+
+    updated = client.put(
+        f"{API}/expense-categories/{category['id']}", json={**CATEGORY, "icon_key": "dog"}
+    )
+    assert updated.json()["icon_key"] == "dog"
+    # Se ofrece en el formulario de gastos del usuario.
+    options = client.get("/api/v1/expenses/options").json()["categories"]
+    assert [c["name"] for c in options] == ["Pets"]
+
+    assert client.delete(f"{API}/expense-categories/{category['id']}").json() == {
+        "result": "DELETED"
+    }
+    assert client.get(f"{API}/expense-categories").json() == []
+
+
+def test_used_category_is_archived_and_can_be_restored(db_session):
+    tag = Tag(user_id=1, name="NEEDED", color_key="emerald")
+    db_session.add(tag)
+    db_session.flush()
+    _expense_with_tag(db_session, tag)
+    [category] = client.get(f"{API}/expense-categories").json()
+    assert category["usage_count"] == 1
+
+    assert client.delete(f"{API}/expense-categories/{category['id']}").json() == {
+        "result": "ARCHIVED"
+    }
+    assert client.get("/api/v1/expenses/options").json()["categories"] == []
+    # El gasto viejo la sigue mostrando.
+    assert client.get("/api/v1/expenses/").json()["items"][0]["category"]["status"] == "DISABLED"
+
+    restored = client.put(
+        f"{API}/expense-categories/{category['id']}",
+        json={
+            "name": category["name"],
+            "icon_key": category["icon_key"],
+            "color_key": category["color_key"],
+            "status": "ENABLED",
+        },
+    )
+    assert restored.json()["status"] == "ENABLED"
+
+
+def test_another_users_category_is_invisible_and_untouchable(db_session, other_user):
+    foreign = Category(user_id=other_user, **CATEGORY)
+    db_session.add(foreign)
+    db_session.commit()
+
+    assert client.get(f"{API}/expense-categories").json() == []
+    assert client.get("/api/v1/expenses/options").json()["categories"] == []
+    assert client.put(f"{API}/expense-categories/{foreign.id}", json=CATEGORY).status_code == 404
+    assert client.delete(f"{API}/expense-categories/{foreign.id}").status_code == 404
+    # El mismo nombre en otro usuario no choca.
+    assert client.post(f"{API}/expense-categories", json=CATEGORY).status_code == 201
+    with acting_as(other_user):
+        assert [c["name"] for c in client.get(f"{API}/expense-categories").json()] == ["Pets"]
 
 
 # --- Tags ---

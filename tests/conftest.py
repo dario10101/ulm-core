@@ -31,6 +31,7 @@ from app.api.deps import get_current_permissions, get_current_user
 from app.db.base_class import Base
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
+from app.db.models import blog as blog_model  # noqa: F401
 from app.db.models import checklist as checklist_model  # noqa: F401
 from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401

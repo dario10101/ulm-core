@@ -1,6 +1,7 @@
-"""Parametros globales del sistema (Settings -> System): categorias de gasto,
-metodos de pago, festivos/fechas especiales y datos de acceso. Solo el admin
-(ver PRIVATE_ROUTERS en app/main.py)."""
+"""Parametros globales del sistema (Settings -> System): plantilla de
+categorias de gasto para usuarios nuevos, metodos de pago, festivos/fechas
+especiales y datos de acceso. Solo el admin (ver PRIVATE_ROUTERS en
+app/main.py)."""
 
 from urllib.parse import urlencode
 
@@ -17,7 +18,8 @@ from app.schemas.calendar_event import (
 )
 from app.schemas.finance import (
     CatalogDeleteRead,
-    CategoryAdminRead,
+    DefaultCategoryRead,
+    DefaultCategoryWrite,
     IconCatalogWrite,
     PaymentMethodAdminRead,
 )
@@ -39,46 +41,49 @@ def get_access_info() -> AccessInfoRead:
     return AccessInfoRead(registration_mode=settings.registration_mode, google_audience_url=url)
 
 
-# --- Categorias de gasto ---
+# --- Plantilla de categorias de gasto (para usuarios nuevos) ---
+#
+# DELETE siempre responde DELETED (nada referencia la plantilla); conserva la
+# forma de los demas catalogos para que el cliente los trate igual.
 
 
-@router.get("/expense-categories", response_model=list[CategoryAdminRead])
-def list_expense_categories(
+@router.get("/expense-categories", response_model=list[DefaultCategoryRead])
+def list_default_expense_categories(
     service: SystemParamsService = Depends(get_system_params_service),
-) -> list[CategoryAdminRead]:
-    return service.list_categories()
+) -> list[DefaultCategoryRead]:
+    return service.list_default_categories()
 
 
-@router.post("/expense-categories", response_model=CategoryAdminRead, status_code=201)
-def create_expense_category(
-    payload: IconCatalogWrite,
+@router.post("/expense-categories", response_model=DefaultCategoryRead, status_code=201)
+def create_default_expense_category(
+    payload: DefaultCategoryWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> CategoryAdminRead:
+) -> DefaultCategoryRead:
     try:
-        return service.create_category(payload)
+        return service.create_default_category(payload)
     except DomainError as exc:
         raise http_error(exc)
 
 
-@router.put("/expense-categories/{category_id}", response_model=CategoryAdminRead)
-def update_expense_category(
+@router.put("/expense-categories/{category_id}", response_model=DefaultCategoryRead)
+def update_default_expense_category(
     category_id: int,
-    payload: IconCatalogWrite,
+    payload: DefaultCategoryWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> CategoryAdminRead:
+) -> DefaultCategoryRead:
     try:
-        return service.update_category(category_id, payload)
+        return service.update_default_category(category_id, payload)
     except DomainError as exc:
         raise http_error(exc)
 
 
 @router.delete("/expense-categories/{category_id}", response_model=CatalogDeleteRead)
-def delete_expense_category(
+def delete_default_expense_category(
     category_id: int,
     service: SystemParamsService = Depends(get_system_params_service),
 ) -> CatalogDeleteRead:
     try:
-        return CatalogDeleteRead(result=service.delete_category(category_id))
+        return CatalogDeleteRead(result=service.delete_default_category(category_id))
     except DomainError as exc:
         raise http_error(exc)
 

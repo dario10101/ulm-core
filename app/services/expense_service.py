@@ -44,7 +44,8 @@ class ExpenseService:
         allow_archived: bool,
     ) -> list[Tag]:
         """Comun a create/update: valida que categoria, metodo de pago y tags
-        existan (los tags, ademas, del usuario) antes de tocar el repository.
+        existan (categoria y tags, ademas, del usuario) antes de tocar el
+        repository.
 
         Un item archivado (DISABLED) no sirve para un gasto nuevo, pero si al
         editar uno viejo, para no obligar a cambiarle la categoria al corregir
@@ -55,7 +56,7 @@ class ExpenseService:
                 allow_archived or item.status == CatalogStatus.ENABLED.value
             )
 
-        if not usable(self._catalog_repository.get_category(category_id)):
+        if not usable(self._catalog_repository.get_category(user_id, category_id)):
             raise ExpenseCategoryNotFoundError(category_id)
         if not usable(self._catalog_repository.get_payment_method(payment_method_id)):
             raise PaymentMethodNotFoundError(payment_method_id)

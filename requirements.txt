@@ -18,3 +18,9 @@ itsdangerous==2.2.0
 # Festivos oficiales por pais y año: base que el admin ajusta en Settings ->
 # Calendar events (ver app/integrations/holiday_provider.py).
 holidays==0.105
+# Funcionalidades con IA (permiso `ai`). Ver app/integrations/openai_client.py.
+openai==3.26.0
+# Blog: subida de .md (UploadFile de FastAPI necesita python-multipart) y
+# lectura del frontmatter YAML (usa yaml.safe_load; no cambiarlo).
+python-multipart==0.0.20
+python-frontmatter==1.1.0

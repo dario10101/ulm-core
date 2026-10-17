@@ -1,11 +1,14 @@
 """Modelos ORM del modulo de finanzas: catalogos (categorias, metodos de
 pago, tags) y registros de gasto.
 
-Categorias y metodos de pago son catalogos globales (no dependen del
-usuario); tags, fuentes y subcategorias son por usuario. Todos tienen `status`
-(ENABLED/DISABLED): un item con registros no se borra, se archiva (DISABLED),
-para no perder la referencia historica; uno sin registros si se borra de
-verdad (ver FinanceParamsService / SystemParamsService).
+Los metodos de pago son un catalogo global; categorias, tags, fuentes y
+subcategorias son por usuario. Todos tienen `status` (ENABLED/DISABLED): un
+item con registros no se borra, se archiva (DISABLED), para no perder la
+referencia historica; uno sin registros si se borra de verdad (ver
+FinanceParamsService / SystemParamsService).
+
+Las categorias por defecto (DefaultExpenseCategory) son solo una plantilla:
+se copian a cada usuario al registrarse y nada las referencia despues.
 """
 
 from datetime import UTC, date, datetime
@@ -17,10 +20,29 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base_class import Base
 
 
-class Category(Base):
-    __tablename__ = "fn_categories"
+class DefaultExpenseCategory(Base):
+    """Plantilla de categorias para usuarios nuevos (la administra el admin).
+    Sin `status`: como ningun gasto la referencia, borrar es borrar."""
+
+    __tablename__ = "fn_default_expense_categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    icon_key: Mapped[str] = mapped_column(String(60), nullable=False)
+    color_key: Mapped[str] = mapped_column(String(30), nullable=False)
+
+
+class Category(Base):
+    """Categoria de gasto de un usuario (copiada de la plantilla al
+    registrarse, o creada por el desde "View records")."""
+
+    __tablename__ = "fn_user_expenses_categories"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_fn_user_expenses_categories_user_id_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     # Nombre en kebab-case de un icono de lucide (ej. "shopping-cart"), para
     # que el frontend lo resuelva contra un diccionario fijo sin tener que
@@ -74,7 +96,9 @@ class Expense(Base):
     payment_method_id: Mapped[int] = mapped_column(
         ForeignKey("fn_payment_methods.id"), nullable=False
     )
-    category_id: Mapped[int] = mapped_column(ForeignKey("fn_categories.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("fn_user_expenses_categories.id"), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

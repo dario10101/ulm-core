@@ -28,6 +28,9 @@ from sqlalchemy.orm import Session
 
 import app.main  # noqa: F401 -- registra todos los modelos en Base.metadata
 from app.db.session import SessionLocal
+from app.repositories.sqlalchemy_finance_catalog_repository import (
+    SqlAlchemyFinanceCatalogRepository,
+)
 from app.repositories.sqlalchemy_user_permission_repository import (
     SqlAlchemyUserPermissionRepository,
 )
@@ -88,6 +91,7 @@ def main(
         SqlAlchemyUserRepository(db),
         SqlAlchemyUserSessionRepository(db),
         SqlAlchemyUserPermissionRepository(db),
+        SqlAlchemyFinanceCatalogRepository(db),
     )
     try:
         if args.command == "list":

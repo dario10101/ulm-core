@@ -1,5 +1,5 @@
-"""Parametros globales del sistema (/system/*, solo admin): categorias de
-gasto, metodos de pago y eventos generales del calendario (festivos)."""
+"""Parametros globales del sistema (/system/*, solo admin): plantilla de
+categorias de gasto, metodos de pago y eventos generales del calendario (festivos)."""
 
 from datetime import date
 
@@ -8,7 +8,7 @@ import pytest
 from app.api.deps import get_holiday_provider
 from app.core.config import settings
 from app.db.models.cld_event import CldEvent
-from app.db.models.finance import Category, Expense, PaymentMethod
+from app.db.models.finance import Category, DefaultExpenseCategory, Expense, PaymentMethod
 from app.integrations.holiday_provider import OfficialHoliday
 from app.main import app
 from tests.conftest import client
@@ -78,12 +78,33 @@ def test_icon_catalog_crud(path):
     assert client.get(f"{API}/{path}").json() == []
 
 
-def test_category_used_by_any_user_is_archived(db_session, other_user):
-    category = Category(name="Groceries", icon_key="shopping-cart", color_key="lime")
+def test_default_category_delete_is_always_real_and_keeps_users_copies(db_session):
+    """La plantilla no se archiva: ningun gasto la referencia. Borrarla no
+    toca la copia que ya recibio cada usuario."""
+    db_session.add(DefaultExpenseCategory(name="Pets", icon_key="paw-print", color_key="amber"))
+    db_session.add(Category(user_id=1, name="Pets", icon_key="paw-print", color_key="amber"))
+    db_session.commit()
+    [default] = client.get(f"{API}/expense-categories").json()
+    assert "status" not in default and "usage_count" not in default
+
+    assert client.delete(f"{API}/expense-categories/{default['id']}").json() == {
+        "result": "DELETED"
+    }
+
+    assert client.get(f"{API}/expense-categories").json() == []
+    assert [c["name"] for c in client.get("/api/v1/expenses/options").json()["categories"]] == [
+        "Pets"
+    ]
+
+
+def test_payment_method_used_by_any_user_is_archived(db_session, other_user):
+    category = Category(
+        user_id=other_user, name="Groceries", icon_key="shopping-cart", color_key="lime"
+    )
     method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
     db_session.add_all([category, method])
     db_session.flush()
-    # El gasto es de OTRO usuario: igual cuenta, el catalogo es global.
+    # El gasto es de OTRO usuario: igual cuenta, el metodo de pago es global.
     db_session.add(
         Expense(
             user_id=other_user,
@@ -96,17 +117,15 @@ def test_category_used_by_any_user_is_archived(db_session, other_user):
     )
     db_session.commit()
 
-    assert client.get(f"{API}/expense-categories").json()[0]["usage_count"] == 1
-    assert client.delete(f"{API}/expense-categories/{category.id}").json() == {"result": "ARCHIVED"}
+    assert client.get(f"{API}/payment-methods").json()[0]["usage_count"] == 1
     assert client.delete(f"{API}/payment-methods/{method.id}").json() == {"result": "ARCHIVED"}
-
-    options = client.get("/api/v1/expenses/options").json()
-    assert options["categories"] == []
-    assert options["payment_methods"] == []
+    assert client.get("/api/v1/expenses/options").json()["payment_methods"] == []
 
 
 def test_archived_category_rejects_new_expenses(db_session):
-    category = Category(name="Old", icon_key="package", color_key="slate", status="DISABLED")
+    category = Category(
+        user_id=1, name="Old", icon_key="package", color_key="slate", status="DISABLED"
+    )
     method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
     db_session.add_all([category, method])
     db_session.commit()

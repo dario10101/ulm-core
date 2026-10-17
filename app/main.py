@@ -11,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import get_current_user, require, require_admin
 from app.api.routes import (
     admin_users,
+    ai,
     auth,
+    blog,
     calendar_events,
     checklists,
     cld_tasks,
@@ -30,6 +32,7 @@ from app.core.csrf import OriginCheckMiddleware
 from app.core.logging import configure_logging, get_logger
 
 # Importar los modelos para que sus tablas queden registradas en Base.metadata
+from app.db.models import blog as blog_model  # noqa: F401
 from app.db.models import checklist as checklist_model  # noqa: F401
 from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
@@ -121,6 +124,8 @@ PRIVATE_ROUTERS = (
     (checklists.router, Permission.PLANNING),
     (cld_tasks.router, Permission.PLANNING),
     (calendar_events.router, Permission.PLANNING),
+    (ai.router, Permission.AI),
+    (blog.router, Permission.BLOG),
 )
 
 for router in PUBLIC_ROUTERS:

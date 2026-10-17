@@ -394,7 +394,7 @@ def test_another_users_calendar_events_are_not_listed(db_session, other_user, pa
 
 
 def test_expense_cannot_use_another_users_tag(db_session, other_user):
-    category = Category(name="Groceries", icon_key="shopping-cart", color_key="lime")
+    category = Category(user_id=1, name="Groceries", icon_key="shopping-cart", color_key="lime")
     payment_method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
     foreign_tag = Tag(user_id=other_user, name="DE B", color_key="emerald")
     db_session.add_all([category, payment_method, foreign_tag])
@@ -409,6 +409,29 @@ def test_expense_cannot_use_another_users_tag(db_session, other_user):
             "payment_method_id": payment_method.id,
             "category_id": category.id,
             "tag_ids": [foreign_tag.id],
+        },
+    )
+
+    assert response.status_code == 404
+    assert client.get(f"{API}/expenses/").json()["total"] == 0
+
+
+def test_expense_cannot_use_another_users_category(db_session, other_user):
+    foreign_category = Category(
+        user_id=other_user, name="Groceries", icon_key="shopping-cart", color_key="lime"
+    )
+    payment_method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
+    db_session.add_all([foreign_category, payment_method])
+    db_session.commit()
+
+    response = client.post(
+        f"{API}/expenses/",
+        json={
+            "name": "Mercado",
+            "amount": 1000,
+            "recorded_on": "2026-09-26",
+            "payment_method_id": payment_method.id,
+            "category_id": foreign_category.id,
         },
     )
 

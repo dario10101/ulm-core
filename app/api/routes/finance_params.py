@@ -1,5 +1,5 @@
 """Parametros del dominio de finanzas que cada usuario administra sobre sus
-datos: tags, fuentes y subcategorias de ingreso ("View records" -> Manage).
+datos: categorias de gasto, tags, fuentes y subcategorias de ingreso ("View records" -> Manage).
 Exige el permiso `finances` (ver PRIVATE_ROUTERS en app/main.py).
 
 DELETE responde 200 con el resultado y no 204: el cliente necesita saber si
@@ -11,6 +11,8 @@ from app.api.deps import get_current_user_id, get_finance_params_service
 from app.api.errors import http_error
 from app.schemas.finance import (
     CatalogDeleteRead,
+    CategoryAdminRead,
+    IconCatalogWrite,
     IncomeSourceAdminRead,
     IncomeSourceWrite,
     IncomeSubcategoryAdminRead,
@@ -22,6 +24,54 @@ from app.services.errors import DomainError
 from app.services.finance_params_service import FinanceParamsService
 
 router = APIRouter(prefix="/finances", tags=["finance params"])
+
+
+# --- Categorias de gasto ---
+
+
+@router.get("/expense-categories", response_model=list[CategoryAdminRead])
+def list_expense_categories(
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> list[CategoryAdminRead]:
+    return service.list_categories(user_id=user_id)
+
+
+@router.post("/expense-categories", response_model=CategoryAdminRead, status_code=201)
+def create_expense_category(
+    payload: IconCatalogWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> CategoryAdminRead:
+    try:
+        return service.create_category(user_id=user_id, payload=payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.put("/expense-categories/{category_id}", response_model=CategoryAdminRead)
+def update_expense_category(
+    category_id: int,
+    payload: IconCatalogWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> CategoryAdminRead:
+    try:
+        return service.update_category(category_id, user_id=user_id, payload=payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.delete("/expense-categories/{category_id}", response_model=CatalogDeleteRead)
+def delete_expense_category(
+    category_id: int,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> CatalogDeleteRead:
+    try:
+        return CatalogDeleteRead(result=service.delete_category(category_id, user_id=user_id))
+    except DomainError as exc:
+        raise http_error(exc)
 
 
 # --- Tags ---

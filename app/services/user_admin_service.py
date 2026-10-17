@@ -4,7 +4,8 @@ Es el unico lugar que crea filas en `users` (ver `register`): lo usan el
 script scripts/manage_users.py, el login en modo `open` y la pantalla de
 administracion (Settings -> Users, rutas /admin/users). Un solo camino de
 creacion evita que cada entrada aplique reglas distintas (normalizacion del
-email, unicidad, defaults).
+email, unicidad, defaults) y es donde el usuario recibe sus datos iniciales
+(la copia de la plantilla de categorias de gasto).
 """
 
 from collections.abc import Iterable, Sequence
@@ -14,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import settings
 from app.db.models.user import User
+from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.repositories.user_permission_repository import UserPermissionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.user_session_repository import UserSessionRepository
@@ -63,10 +65,12 @@ class UserAdminService:
         users: UserRepository,
         sessions: UserSessionRepository,
         permissions: UserPermissionRepository,
+        finance_catalog: FinanceCatalogRepository,
     ) -> None:
         self._users = users
         self._sessions = sessions
         self._permissions = permissions
+        self._finance_catalog = finance_catalog
 
     def register(self, *, email: str, name: str | None, timezone: str | None) -> User:
         email = normalize_email(email)
@@ -81,6 +85,9 @@ class UserAdminService:
         )
         self._users.add(user)
         self._users.flush()
+        # Misma transaccion que el alta: no queda un usuario sin categorias.
+        self._finance_catalog.copy_default_categories(user.id)
+        self._finance_catalog.flush()
         return user
 
     def invite(self, email: str, *, name: str | None = None) -> User:

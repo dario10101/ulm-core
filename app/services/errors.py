@@ -363,3 +363,112 @@ class MissingBasePermissionError(ValidationError):
 class AdminRoleNotEditableError(ConflictError):
     """El admin sale de ADMIN_EMAILS: no se le asignan ni quitan permisos, ni
     se lo deshabilita, por API o consola."""
+
+
+class AiNotConfiguredError(DomainError):
+    """No hay OPENAI_API_KEY en el servidor (se traduce a 503)."""
+
+    def __init__(self) -> None:
+        super().__init__("La IA no esta configurada en el servidor")
+
+
+class UnknownAiModelError(ValidationError):
+    """Se pidio un modelo fuera del catalogo (ver app/services/ai_models.py)."""
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        super().__init__(f"Modelo no disponible: {model_id}")
+
+
+# --- Concurrencia ---
+
+
+class ConcurrentUpdateError(ConflictError):
+    """Otro request cambio el mismo dato entre la lectura y la escritura
+    (bloqueo optimista por `version`). Reintentar con datos frescos."""
+
+    def __init__(self) -> None:
+        super().__init__("Otro cambio se guardo al mismo tiempo. Recarga e intenta de nuevo.")
+
+
+# --- Blog: administracion (permiso `blog`) ---
+
+
+class BlogSectionNotFoundError(NotFoundError):
+    """La seccion no existe (o no es del usuario)."""
+
+    def __init__(self) -> None:
+        super().__init__("La seccion no existe")
+
+
+class BlogGroupNotFoundError(NotFoundError):
+    """La subseccion no existe o no pertenece a esa seccion."""
+
+    def __init__(self) -> None:
+        super().__init__("La subseccion no existe")
+
+
+class BlogItemNotFoundError(NotFoundError):
+    """El elemento no existe o no pertenece a esa seccion."""
+
+    def __init__(self) -> None:
+        super().__init__("El elemento no existe")
+
+
+class UnknownSectionTypeError(ValidationError):
+    """El tipo de seccion no esta en el catalogo (app/services/blog_section_types.py)."""
+
+    def __init__(self, section_type: str) -> None:
+        self.section_type = section_type
+        super().__init__(f"Tipo de seccion desconocido: {section_type}")
+
+
+class SingletonSectionExistsError(ConflictError):
+    """El tipo admite una sola seccion por usuario y ya existe."""
+
+    def __init__(self, section_type: str) -> None:
+        self.section_type = section_type
+        super().__init__(f"Ya tienes una seccion de tipo {section_type}")
+
+
+class SlugTakenError(ConflictError):
+    """El slug ya lo usa otra seccion del usuario u otro elemento de la seccion."""
+
+    def __init__(self, slug: str) -> None:
+        self.slug = slug
+        super().__init__(f"El slug '{slug}' ya esta en uso")
+
+
+class InvalidSlugError(ValidationError):
+    """El slug no cumple el formato o esta reservado (ver app/services/blog_slugs.py)."""
+
+
+class BlogLimitError(ValidationError):
+    """Se alcanzo un tope configurable (secciones habilitadas o creadas,
+    subsecciones, elementos). El mensaje dice cual."""
+
+
+class SectionWithoutItemsError(ValidationError):
+    """El tipo de seccion no tiene subsecciones ni elementos (es una plantilla)."""
+
+    def __init__(self, section_type: str) -> None:
+        self.section_type = section_type
+        super().__init__(f"Las secciones de tipo {section_type} no tienen elementos")
+
+
+class InvalidSectionContentError(ValidationError):
+    """El contenido no cumple el modelo de la plantilla. El mensaje lista los campos."""
+
+
+class InvalidOrderError(ValidationError):
+    """El orden enviado no trae exactamente los elementos a ordenar (todas las
+    secciones del usuario, o todas las subsecciones o elementos de una seccion)."""
+
+    def __init__(self, noun: str = "seccion") -> None:
+        self.noun = noun
+        super().__init__(f"El orden debe incluir cada {noun} exactamente una vez")
+
+
+class InvalidMarkdownError(ValidationError):
+    """El archivo subido no es un .md valido (extension, tamaño, UTF-8,
+    frontmatter). El mensaje dice que fallo."""

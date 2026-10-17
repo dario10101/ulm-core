@@ -8,17 +8,26 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from app.db.base_class import Base
-from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
+from app.db.models.finance import (
+    Category,
+    DefaultExpenseCategory,
+    IncomeSource,
+    IncomeSubcategory,
+    PaymentMethod,
+    Tag,
+)
 
 
 class FinanceCatalogRepository(Protocol):
-    def list_enabled_categories(self) -> Sequence[Category]: ...
+    def list_enabled_categories(self, user_id: int) -> Sequence[Category]: ...
 
     def list_enabled_payment_methods(self) -> Sequence[PaymentMethod]: ...
 
     def list_enabled_tags(self, user_id: int) -> Sequence[Tag]: ...
 
-    def get_category(self, category_id: int) -> Category | None: ...
+    def get_category(self, user_id: int, category_id: int) -> Category | None:
+        """None si no existe o no es de ese usuario."""
+        ...
 
     def get_payment_method(self, payment_method_id: int) -> PaymentMethod | None: ...
 
@@ -42,8 +51,16 @@ class FinanceCatalogRepository(Protocol):
 
     # --- Administracion (Settings y "View records") ---
 
-    def list_all_categories(self) -> Sequence[Category]:
-        """Incluye las archivadas (DISABLED)."""
+    def list_categories(self, user_id: int) -> Sequence[Category]:
+        """Todas las categorias del usuario, incluidas las archivadas."""
+        ...
+
+    def list_default_categories(self) -> Sequence[DefaultExpenseCategory]: ...
+
+    def get_default_category(self, category_id: int) -> DefaultExpenseCategory | None: ...
+
+    def copy_default_categories(self, user_id: int) -> None:
+        """Le da al usuario su propia copia de la plantilla (al registrarse)."""
         ...
 
     def list_all_payment_methods(self) -> Sequence[PaymentMethod]: ...
@@ -57,9 +74,7 @@ class FinanceCatalogRepository(Protocol):
     # Conteos de uso: id -> cantidad de registros que lo referencian. Un id
     # sin registros no aparece en el dict.
 
-    def category_usage(self) -> dict[int, int]:
-        """De todos los usuarios: la categoria es un catalogo global."""
-        ...
+    def category_usage(self, user_id: int) -> dict[int, int]: ...
 
     def payment_method_usage(self) -> dict[int, int]: ...
 

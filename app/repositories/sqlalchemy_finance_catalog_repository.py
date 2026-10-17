@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.base_class import Base
 from app.db.models.finance import (
     Category,
+    DefaultExpenseCategory,
     DirectIncome,
     DirectIncomeTag,
     Expense,
@@ -26,11 +27,11 @@ class SqlAlchemyFinanceCatalogRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def list_enabled_categories(self) -> Sequence[Category]:
+    def list_enabled_categories(self, user_id: int) -> Sequence[Category]:
         return (
             self._db.execute(
                 select(Category)
-                .where(Category.status == CatalogStatus.ENABLED.value)
+                .where(Category.user_id == user_id, Category.status == CatalogStatus.ENABLED.value)
                 .order_by(Category.name)
             )
             .scalars()
@@ -59,8 +60,9 @@ class SqlAlchemyFinanceCatalogRepository:
             .all()
         )
 
-    def get_category(self, category_id: int) -> Category | None:
-        return self._db.get(Category, category_id)
+    def get_category(self, user_id: int, category_id: int) -> Category | None:
+        category = self._db.get(Category, category_id)
+        return category if category is not None and category.user_id == user_id else None
 
     def get_payment_method(self, payment_method_id: int) -> PaymentMethod | None:
         return self._db.get(PaymentMethod, payment_method_id)
@@ -108,8 +110,35 @@ class SqlAlchemyFinanceCatalogRepository:
 
     # --- Administracion ---
 
-    def list_all_categories(self) -> Sequence[Category]:
-        return self._db.execute(select(Category).order_by(Category.name)).scalars().all()
+    def list_categories(self, user_id: int) -> Sequence[Category]:
+        return (
+            self._db.execute(
+                select(Category).where(Category.user_id == user_id).order_by(Category.name)
+            )
+            .scalars()
+            .all()
+        )
+
+    def list_default_categories(self) -> Sequence[DefaultExpenseCategory]:
+        return (
+            self._db.execute(select(DefaultExpenseCategory).order_by(DefaultExpenseCategory.name))
+            .scalars()
+            .all()
+        )
+
+    def get_default_category(self, category_id: int) -> DefaultExpenseCategory | None:
+        return self._db.get(DefaultExpenseCategory, category_id)
+
+    def copy_default_categories(self, user_id: int) -> None:
+        self._db.add_all(
+            Category(
+                user_id=user_id,
+                name=default.name,
+                icon_key=default.icon_key,
+                color_key=default.color_key,
+            )
+            for default in self.list_default_categories()
+        )
 
     def list_all_payment_methods(self) -> Sequence[PaymentMethod]:
         return self._db.execute(select(PaymentMethod).order_by(PaymentMethod.name)).scalars().all()
@@ -129,8 +158,8 @@ class SqlAlchemyFinanceCatalogRepository:
         rows = self._db.execute(select(column, func.count()).where(*where).group_by(column))
         return {item_id: count for item_id, count in rows}
 
-    def category_usage(self) -> dict[int, int]:
-        return self._count_by(Expense.category_id)
+    def category_usage(self, user_id: int) -> dict[int, int]:
+        return self._count_by(Expense.category_id, Expense.user_id == user_id)
 
     def payment_method_usage(self) -> dict[int, int]:
         return self._count_by(Expense.payment_method_id)

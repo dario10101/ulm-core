@@ -4,7 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.db.models.finance import Category, DefaultExpenseCategory
 from app.db.models.user import User, UserSession
+from app.repositories.sqlalchemy_finance_catalog_repository import (
+    SqlAlchemyFinanceCatalogRepository,
+)
 from app.repositories.sqlalchemy_user_permission_repository import (
     SqlAlchemyUserPermissionRepository,
 )
@@ -21,6 +25,7 @@ def service(db_session) -> UserAdminService:
         SqlAlchemyUserRepository(db_session),
         SqlAlchemyUserSessionRepository(db_session),
         SqlAlchemyUserPermissionRepository(db_session),
+        SqlAlchemyFinanceCatalogRepository(db_session),
     )
 
 
@@ -31,6 +36,27 @@ def test_invite_normalizes_the_email_and_defaults_the_name(service):
     assert user.name == "ana.perez"
     assert user.timezone == "America/Bogota"
     assert not service.has_logged_in(user.id)
+
+
+def test_new_user_gets_a_copy_of_the_default_categories(service, db_session):
+    db_session.add_all(
+        [
+            DefaultExpenseCategory(name="Food", icon_key="utensils", color_key="yellow"),
+            DefaultExpenseCategory(name="Health", icon_key="heart-pulse", color_key="red"),
+        ]
+    )
+    db_session.flush()
+
+    user = service.invite("ana@example.com")
+    # La copia es independiente: cambiar la plantilla despues no la toca.
+    db_session.query(DefaultExpenseCategory).delete()
+    db_session.flush()
+
+    copies = db_session.query(Category).filter_by(user_id=user.id).order_by(Category.name).all()
+    assert [(c.name, c.icon_key, c.color_key, c.status) for c in copies] == [
+        ("Food", "utensils", "yellow", "ENABLED"),
+        ("Health", "heart-pulse", "red", "ENABLED"),
+    ]
 
 
 @pytest.mark.parametrize("email", ["ruben@example.com", "RUBEN@example.com"])

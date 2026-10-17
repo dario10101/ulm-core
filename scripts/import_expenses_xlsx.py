@@ -4,7 +4,8 @@ Lee solo la hoja "Expenses". Fila 1: rango del export (se ignora); fila 2:
 encabezados; desde la fila 3, un gasto por fila:
 
     A Date and time   -> recorded_on (solo la fecha; la hora siempre es 00:00)
-    B Category        -> category_id, por nombre exacto contra fn_categories
+    B Category        -> category_id, por nombre exacto contra las categorias
+                         del usuario (fn_user_expenses_categories)
     C Account         -> payment_method_id (ver ACCOUNT_TO_PAYMENT_METHOD)
     D Amount in default currency -> amount (COP; F trae el mismo valor)
     K Comment         -> name, en mayusculas como lo guarda la API. Si viene
@@ -15,6 +16,9 @@ El resto de columnas no se usa (moneda siempre COP, tags siempre vacios).
 Valida TODO antes de escribir: si una categoria o cuenta no calza, aborta
 sin insertar nada. Para no duplicar, se niega a correr si el usuario ya tiene
 gastos en el rango de fechas de los archivos (--force lo salta).
+
+El usuario tiene que existir antes (al registrarse recibe la copia de la
+plantilla de categorias; ver UserAdminService.register).
 
 Uso (desde ulm-core/, con el venv activado y openpyxl de requirements-dev.txt):
     python -m scripts.import_expenses_xlsx ../ulm-data/expenses/*.xlsx \
@@ -108,7 +112,9 @@ def main() -> None:
         if user is None:
             sys.exit(f"No existe el usuario {args.email}.")
 
-        categories = {c.name: c.id for c in db.scalars(select(Category))}
+        categories = {
+            c.name: c.id for c in db.scalars(select(Category).where(Category.user_id == user.id))
+        }
         payment_methods = {p.name: p.id for p in db.scalars(select(PaymentMethod))}
 
         # Validacion completa antes de escribir nada.

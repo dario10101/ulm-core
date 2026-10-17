@@ -63,5 +63,23 @@ class Settings(BaseSettings):
     holidays_country: str = "CO"
     holidays_language: str = "es"
 
+    # --- IA (OpenAI). Ver app/integrations/openai_client.py ---
+    # Vacia: el modulo de IA responde 503 en vez de fallar contra OpenAI.
+    openai_api_key: str = ""
+    # Modelo preseleccionado en la UI. Tiene que estar en el catalogo
+    # (app/services/ai_models.py, que tambien fija el tope de tokens de cada uno).
+    openai_model: str = "gpt-6-luna"
+    openai_timeout_seconds: float = 30
+
+    # --- Blog (permiso `blog`). Ver PLAN-BLOG.md, seccion 5 ---
+    # Secciones habilitadas a la vez (botones del menu del blog).
+    blog_max_enabled_sections: int = 6
+    # Topes contra abuso: secciones creadas (habilitadas o no) por usuario,
+    # subsecciones y elementos por coleccion, y tamaño de cada .md.
+    blog_max_sections: int = 20
+    blog_max_groups_per_section: int = 20
+    blog_max_items_per_section: int = 200
+    blog_max_md_bytes: int = 200_000
+
 
 settings = Settings()

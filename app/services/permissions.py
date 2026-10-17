@@ -39,6 +39,11 @@ class Permission(str, Enum):
     # Gestionar el blog propio; sin avanzado `.ai` por ahora. Ver un blog
     # publico no exige permiso, pero solo existe si su dueño tiene este.
     BLOG = "blog"
+    # Funcionalidades con IA generales (hoy, preguntas sueltas sin datos del
+    # usuario). Es un permiso base, no el `.ai` de un dominio: esos habilitan
+    # el analisis con IA *sobre los registros* de ese dominio. Gasta la key de
+    # OpenAI del servidor, por eso se asigna aparte.
+    AI = "ai"
 
     @property
     def base(self) -> "Permission | None":

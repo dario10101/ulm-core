@@ -131,8 +131,9 @@ def test_public_blog_is_read_without_session():
     response = client.get(f"{API}/public/blogs/ruben")
 
     assert response.status_code == 200
-    # Solo lo publico: ni id, ni email, ni nombre de Google, ni avatar.
-    assert response.json() == {"username": "ruben"}
+    # Solo lo publico: ni id, ni email, ni nombre de Google, ni avatar. Sin
+    # haber entrado nunca al modulo, el blog existe pero no tiene secciones.
+    assert response.json() == {"username": "ruben", "display_name": None, "sections": []}
 
 
 @pytest.mark.usefixtures("public_blog", "real_auth", "real_permissions")

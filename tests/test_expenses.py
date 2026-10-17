@@ -16,7 +16,9 @@ from tests.conftest import client
 
 def _seed_catalog(db_session, *, user_id: int = 1) -> tuple[int, int, int]:
     """Crea una categoria, un metodo de pago y un tag ENABLED; devuelve sus ids."""
-    category = Category(name="Groceries", icon_key="shopping-cart", color_key="lime")
+    category = Category(
+        user_id=user_id, name="Groceries", icon_key="shopping-cart", color_key="lime"
+    )
     payment_method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
     tag = Tag(user_id=user_id, name="NEEDED", color_key="emerald")
     db_session.add_all([category, payment_method, tag])
@@ -27,7 +29,7 @@ def _seed_catalog(db_session, *, user_id: int = 1) -> tuple[int, int, int]:
 def test_get_expense_options_only_returns_enabled(db_session):
     category_id, payment_method_id, tag_id = _seed_catalog(db_session)
     disabled_category = Category(
-        name="Old", icon_key="package", color_key="slate", status="DISABLED"
+        user_id=1, name="Old", icon_key="package", color_key="slate", status="DISABLED"
     )
     db_session.add(disabled_category)
     db_session.commit()
@@ -176,7 +178,7 @@ def test_list_expenses_is_paginated_and_filters_by_date_range(db_session):
 
 def test_update_and_delete_expense(db_session):
     category_id, payment_method_id, tag_id = _seed_catalog(db_session)
-    other_category = Category(name="Fuel", icon_key="fuel", color_key="orange")
+    other_category = Category(user_id=1, name="Fuel", icon_key="fuel", color_key="orange")
     db_session.add(other_category)
     db_session.commit()
 
@@ -289,7 +291,7 @@ def test_delete_of_another_users_expense_returns_404(db_session):
 
 def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(db_session):
     category_id, payment_method_id, tag_id = _seed_catalog(db_session)
-    other_category = Category(name="Fuel", icon_key="fuel", color_key="orange")
+    other_category = Category(user_id=1, name="Fuel", icon_key="fuel", color_key="orange")
     other_payment_method = PaymentMethod(name="PSE", icon_key="landmark", color_key="indigo")
     other_tag = Tag(user_id=1, name="WANTED", color_key="amber")
     db_session.add_all([other_category, other_payment_method, other_tag])
@@ -379,7 +381,7 @@ def test_another_users_expense_is_not_listed(db_session):
 
 def test_summarize_expenses_groups_by_each_dimension(db_session):
     category_id, payment_method_id, tag_id = _seed_catalog(db_session)
-    other_category = Category(name="Transport", icon_key="bus", color_key="sky")
+    other_category = Category(user_id=1, name="Transport", icon_key="bus", color_key="sky")
     db_session.add(other_category)
     db_session.commit()
 
