@@ -22,23 +22,30 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.integrations.google_oauth import GoogleOAuthClient, HttpGoogleOAuthClient
 from app.integrations.holiday_provider import HolidayProvider, PythonHolidaysProvider
+from app.integrations.image_search import ImageSearch, build_image_search
 from app.integrations.openai_client import OpenAiTextGenerator, TextGenerator
+from app.repositories.ai_usage_repository import AiUsageRepository
 from app.repositories.blog_entity_repository import BlogEntityRepository
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
 from app.repositories.cld_user_event_repository import CldUserEventRepository
+from app.repositories.english_bank_repository import EnglishBankRepository
 from app.repositories.expense_repository import ExpenseRepository
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.repositories.income_repository import IncomeRepository, InterestIncomeRepository
 from app.repositories.income_summary_repository import IncomeSummaryRepository
 from app.repositories.meal_repository import MealRepository
+from app.repositories.sqlalchemy_ai_usage_repository import SqlAlchemyAiUsageRepository
 from app.repositories.sqlalchemy_blog_entity_repository import SqlAlchemyBlogEntityRepository
 from app.repositories.sqlalchemy_category_repository import SqlAlchemyCategoryRepository
 from app.repositories.sqlalchemy_cld_event_repository import SqlAlchemyCldEventRepository
 from app.repositories.sqlalchemy_cld_task_repository import SqlAlchemyCldTaskRepository
 from app.repositories.sqlalchemy_cld_user_event_repository import (
     SqlAlchemyCldUserEventRepository,
+)
+from app.repositories.sqlalchemy_english_bank_repository import (
+    SqlAlchemyEnglishBankRepository,
 )
 from app.repositories.sqlalchemy_expense_repository import SqlAlchemyExpenseRepository
 from app.repositories.sqlalchemy_finance_catalog_repository import (
@@ -75,6 +82,8 @@ from app.repositories.week_category_day_score_repository import WeekCategoryDayS
 from app.repositories.week_repository import WeekRepository
 from app.repositories.weight_repository import WeightRepository
 from app.services.ai_chat_service import AiChatService
+from app.services.ai_models import AiModel, find_model
+from app.services.ai_usage_service import AiUsageRecorder
 from app.services.auth_service import AuthService
 from app.services.blog_admin_service import BlogAdminService
 from app.services.blog_service import BlogService
@@ -85,6 +94,7 @@ from app.services.checklist_analytics_service import ChecklistAnalyticsService
 from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
 from app.services.cld_user_event_service import CldUserEventService
+from app.services.english_bank_service import EnglishBankService
 from app.services.expense_service import ExpenseService
 from app.services.finance_catalog_service import FinanceCatalogService
 from app.services.finance_params_service import FinanceParamsService
@@ -446,3 +456,55 @@ def get_blog_admin_service(
     repository: BlogEntityRepository = Depends(get_blog_entity_repository),
 ) -> BlogAdminService:
     return BlogAdminService(repository)
+
+
+# --- English ---
+
+
+def get_ai_usage_repository(db: Session = Depends(get_db)) -> AiUsageRepository:
+    return SqlAlchemyAiUsageRepository(db)
+
+
+def get_ai_usage_recorder(
+    repository: AiUsageRepository = Depends(get_ai_usage_repository),
+) -> AiUsageRecorder:
+    return AiUsageRecorder(repository)
+
+
+@lru_cache
+def get_image_search() -> ImageSearch:
+    """Una sola por proceso: reutiliza las conexiones HTTP a las fuentes."""
+    return build_image_search(
+        pexels_api_key=settings.pexels_api_key,
+        timeout_seconds=settings.image_search_timeout_seconds,
+    )
+
+
+def get_english_bank_repository(db: Session = Depends(get_db)) -> EnglishBankRepository:
+    return SqlAlchemyEnglishBankRepository(db)
+
+
+def get_english_model() -> AiModel:
+    """El de ENGLISH_MODEL. Tiene que estar en el catalogo (ai_models.py), que
+    tambien fija su reasoning_effort."""
+    model = find_model(settings.english_model)
+    if model is None:
+        raise RuntimeError(f"ENGLISH_MODEL={settings.english_model} no esta en el catalogo")
+    return model
+
+
+def get_english_bank_service(
+    repository: EnglishBankRepository = Depends(get_english_bank_repository),
+    image_search: ImageSearch = Depends(get_image_search),
+    generator: TextGenerator | None = Depends(get_text_generator),
+    usage: AiUsageRecorder = Depends(get_ai_usage_recorder),
+    model: AiModel = Depends(get_english_model),
+) -> EnglishBankService:
+    return EnglishBankService(
+        repository,
+        image_search,
+        generator,
+        usage,
+        model=model,
+        max_output_tokens=settings.english_bank_max_output_tokens,
+    )

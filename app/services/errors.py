@@ -472,3 +472,26 @@ class InvalidOrderError(ValidationError):
 class InvalidMarkdownError(ValidationError):
     """El archivo subido no es un .md valido (extension, tamaño, UTF-8,
     frontmatter). El mensaje dice que fallo."""
+
+
+# --- English ---
+
+
+class EnglishWordNotFoundError(NotFoundError):
+    def __init__(self, word_id: int) -> None:
+        super().__init__(f"La palabra {word_id} no existe")
+
+
+class NoMoreImageCandidatesError(ConflictError):
+    """ "Cambiar imagen" sin candidatas restantes: no se busca de nuevo (las
+    fuentes devolverian las mismas)."""
+
+    def __init__(self, lemma: str) -> None:
+        super().__init__(f"No quedan imagenes candidatas para '{lemma}'; deshabilita la palabra")
+
+
+class EnglishWordNotReadyError(ValidationError):
+    """Se intento aprobar una palabra sin imagen o sin contenido."""
+
+    def __init__(self, lemma: str) -> None:
+        super().__init__(f"'{lemma}' no tiene imagen y contenido: no se puede aprobar")

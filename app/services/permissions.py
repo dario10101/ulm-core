@@ -39,6 +39,9 @@ class Permission(str, Enum):
     # Gestionar el blog propio; sin avanzado `.ai` por ahora. Ver un blog
     # publico no exige permiso, pero solo existe si su dueño tiene este.
     BLOG = "blog"
+    # Practica de ingles. Sin `.ai`: las acciones que gastan tokens se
+    # controlaran con creditos transversales (ENGLISH-TEACHER-PLAN.md, D7).
+    ENGLISH = "english"
     # Funcionalidades con IA generales (hoy, preguntas sueltas sin datos del
     # usuario). Es un permiso base, no el `.ai` de un dominio: esos habilitan
     # el analisis con IA *sobre los registros* de ese dominio. Gasta la key de

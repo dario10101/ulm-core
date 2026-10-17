@@ -71,6 +71,24 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-6-luna"
     openai_timeout_seconds: float = 30
 
+    # --- English (permiso `english`). Ver ENGLISH-TEACHER-PLAN.md ---
+    # Modelo del banco de contenido y del feedback: uno del catalogo
+    # (ai_models.py), del que se toma el reasoning_effort. El tope de tokens es
+    # propio: un lote de 10 palabras no entra en los 800 del chat.
+    english_model: str = "gpt-6-luna"
+    english_bank_max_output_tokens: int = 6000
+    english_feedback_max_output_tokens: int = 1500
+    # Transcripcion de la voz. Precio informativo para ai_usage_events.
+    english_transcription_model: str = "whisper-1"
+    english_transcription_usd_per_minute: float = 0.006
+    # Tope del audio subido (bytes). La API de OpenAI acepta hasta 25 MB.
+    english_max_audio_bytes: int = 10_000_000
+    # Palabras aprobadas minimas para que un nivel se pueda elegir.
+    english_min_words_per_level: int = 5
+    # Fotos para sustantivos (opcional): sin key, solo ARASAAC y Openverse.
+    pexels_api_key: str = ""
+    image_search_timeout_seconds: float = 10
+
     # --- Blog (permiso `blog`). Ver PLAN-BLOG.md, seccion 5 ---
     # Secciones habilitadas a la vez (botones del menu del blog).
     blog_max_enabled_sections: int = 6

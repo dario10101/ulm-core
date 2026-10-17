@@ -15,11 +15,13 @@ from app.db.base_class import Base
 # Importar TODOS los modelos para que sus tablas queden registradas en
 # Base.metadata. Si falta alguno, --autogenerate no lo ve y propone borrar su
 # tabla (ver ulm-repository/how-to/alembic.md).
+from app.db.models import ai_usage as ai_usage_model  # noqa: F401
 from app.db.models import blog as blog_model  # noqa: F401
 from app.db.models import checklist as checklist_model  # noqa: F401
 from app.db.models import cld_event as cld_event_model  # noqa: F401
 from app.db.models import cld_task as cld_task_model  # noqa: F401
 from app.db.models import cld_user_event as cld_user_event_model  # noqa: F401
+from app.db.models import english as english_model  # noqa: F401
 from app.db.models import finance as finance_model  # noqa: F401
 from app.db.models import meal as meal_model  # noqa: F401
 from app.db.models import user as user_model  # noqa: F401

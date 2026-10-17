@@ -10,7 +10,7 @@ que no hay nada que encadenar y no tiene sentido dejar las preguntas alla.
 """
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import openai
 
@@ -36,7 +36,11 @@ class TextGenerator(Protocol):
         prompt: str,
         max_output_tokens: int,
         reasoning_effort: str | None,
-    ) -> GeneratedText: ...
+        json_schema: dict[str, Any] | None = None,
+    ) -> GeneratedText:
+        """Con `json_schema`, la respuesta es un JSON que cumple ese esquema
+        (salida estructurada, modo estricto): el que llama la parsea."""
+        ...
 
     def available_models(self) -> frozenset[str]:
         """IDs de los modelos que la key tiene habilitados."""
@@ -58,9 +62,21 @@ class OpenAiTextGenerator:
         prompt: str,
         max_output_tokens: int,
         reasoning_effort: str | None,
+        json_schema: dict[str, Any] | None = None,
     ) -> GeneratedText:
         # Un modelo no razonador rechaza el parametro `reasoning`: va solo si aplica.
-        extra = {"reasoning": {"effort": reasoning_effort}} if reasoning_effort else {}
+        extra: dict[str, Any] = (
+            {"reasoning": {"effort": reasoning_effort}} if reasoning_effort else {}
+        )
+        if json_schema is not None:
+            extra["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": json_schema.get("title", "response"),
+                    "schema": json_schema,
+                    "strict": True,
+                }
+            }
         try:
             response = self._client.responses.create(
                 model=model,
