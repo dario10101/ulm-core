@@ -41,6 +41,7 @@ DOMAIN_ENDPOINTS = [
     ("/finances/tags", Permission.FINANCES),
     ("/checklists/categories", Permission.PLANNING),
     ("/blog/sections", Permission.BLOG),
+    ("/english/settings", Permission.ENGLISH),
     ("/calendar-tasks?date=2026-10-01", Permission.PLANNING),
     ("/calendar-events?first_day=2026-10-01&last_day=2026-10-07", Permission.PLANNING),
 ]

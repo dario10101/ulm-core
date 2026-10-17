@@ -4,6 +4,9 @@ Banco compartido (sin user_id; lo llena el admin desde Settings -> System):
 - eng_words: una fila por palabra de la lista (D29), con su estado en el banco.
 - eng_word_images: candidatas de imagen por palabra; una seleccionada.
 - eng_word_contents: frases y textos de la practica, uno por palabra y nivel.
+
+Por usuario: su nivel (eng_user_settings), sus practicas completadas
+(eng_practices) y su relacion con cada palabra (eng_user_words).
 """
 
 from datetime import UTC, datetime
@@ -14,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -120,3 +124,66 @@ class EngWordContent(Base):
     # contenido es viejo sin compararlo.
     prompt_version: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# --- Datos de cada usuario (aislados por user_id) ---
+
+
+class EngUserSettings(Base):
+    __tablename__ = "eng_user_settings"
+    __table_args__ = (CheckConstraint(f"level {LEVEL_CHECK}", name="level"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    level: Mapped[str] = mapped_column(String(2), nullable=False)
+    # "No por ahora" en la sugerencia de nivel: no se vuelve a sugerir hasta
+    # que haya SUGGESTION_WINDOW practicas posteriores (seccion 4.1).
+    level_suggestion_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EngPractice(Base):
+    """Una practica completada. Se guarda entera al llegar al cierre (D8/D21):
+    no hay practicas a medias en la base."""
+
+    __tablename__ = "eng_practices"
+    __table_args__ = (CheckConstraint(f"level {LEVEL_CHECK}", name="level"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("eng_words.id"), nullable=False)
+    content_id: Mapped[int] = mapped_column(ForeignKey("eng_word_contents.id"), nullable=False)
+    # Copia del nivel del contenido: si el usuario cambia de nivel, la
+    # historia (y la sugerencia de nivel) sigue siendo correcta.
+    level: Mapped[str] = mapped_column(String(2), nullable=False)
+    vocab_revealed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    vocab_used_synonym: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    listening_text_shown: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    writing_text: Mapped[str] = mapped_column(Text, nullable=False)
+    reading_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Coincidencia de la lectura con el texto esperado (0-100), del diff local.
+    reading_match_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    free_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sin microfono (permiso denegado): se salta el speaking.
+    speaking_skipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    audio_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # La palabra ya estaba dominada (se repite porque no quedaban otras, D19):
+    # el check no aplica y no se puede desmarcar (D20).
+    was_mastered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EngUserWord(Base):
+    """Relacion usuario-palabra con estado (*association table*): la palabra
+    del banco no cambia; lo que cambia es si ESTE usuario la domina (D4)."""
+
+    __tablename__ = "eng_user_words"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("eng_words.id"), primary_key=True)
+    mastered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    times_practiced: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_practiced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

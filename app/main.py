@@ -17,6 +17,7 @@ from app.api.routes import (
     calendar_events,
     checklists,
     cld_tasks,
+    english,
     english_admin,
     expenses,
     finance_params,
@@ -130,6 +131,7 @@ PRIVATE_ROUTERS = (
     (calendar_events.router, Permission.PLANNING),
     (ai.router, Permission.AI),
     (blog.router, Permission.BLOG),
+    (english.router, Permission.ENGLISH),
 )
 
 for router in PUBLIC_ROUTERS:

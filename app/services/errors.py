@@ -495,3 +495,35 @@ class EnglishWordNotReadyError(ValidationError):
 
     def __init__(self, lemma: str) -> None:
         super().__init__(f"'{lemma}' no tiene imagen y contenido: no se puede aprobar")
+
+
+class EnglishLevelNotSetError(ConflictError):
+    def __init__(self) -> None:
+        super().__init__("Elige tu nivel de ingles en Settings antes de practicar")
+
+
+class EnglishLevelUnavailableError(ValidationError):
+    """El nivel no tiene banco suficiente (el admin todavia no lo lleno)."""
+
+    def __init__(self, level: str) -> None:
+        super().__init__(f"El nivel {level} todavia no tiene palabras disponibles")
+
+
+class EnglishBankEmptyError(ConflictError):
+    def __init__(self, level: str) -> None:
+        super().__init__(f"No hay palabras disponibles para el nivel {level}")
+
+
+class EnglishPracticeNotFoundError(NotFoundError):
+    def __init__(self, practice_id: int) -> None:
+        super().__init__(f"La practica {practice_id} no existe")
+
+
+class EnglishContentMismatchError(ValidationError):
+    def __init__(self) -> None:
+        super().__init__("El contenido no corresponde a la palabra de la practica")
+
+
+class EnglishWritingTooShortError(ValidationError):
+    def __init__(self, minimum: int) -> None:
+        super().__init__(f"El texto del writing necesita al menos {minimum} caracteres")

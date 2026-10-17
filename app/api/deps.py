@@ -31,6 +31,7 @@ from app.repositories.cld_event_repository import CldEventRepository
 from app.repositories.cld_task_repository import CldTaskRepository
 from app.repositories.cld_user_event_repository import CldUserEventRepository
 from app.repositories.english_bank_repository import EnglishBankRepository
+from app.repositories.english_practice_repository import EnglishPracticeRepository
 from app.repositories.expense_repository import ExpenseRepository
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.repositories.income_repository import IncomeRepository, InterestIncomeRepository
@@ -46,6 +47,9 @@ from app.repositories.sqlalchemy_cld_user_event_repository import (
 )
 from app.repositories.sqlalchemy_english_bank_repository import (
     SqlAlchemyEnglishBankRepository,
+)
+from app.repositories.sqlalchemy_english_practice_repository import (
+    SqlAlchemyEnglishPracticeRepository,
 )
 from app.repositories.sqlalchemy_expense_repository import SqlAlchemyExpenseRepository
 from app.repositories.sqlalchemy_finance_catalog_repository import (
@@ -95,6 +99,7 @@ from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
 from app.services.cld_user_event_service import CldUserEventService
 from app.services.english_bank_service import EnglishBankService
+from app.services.english_practice_service import EnglishPracticeService
 from app.services.expense_service import ExpenseService
 from app.services.finance_catalog_service import FinanceCatalogService
 from app.services.finance_params_service import FinanceParamsService
@@ -507,4 +512,16 @@ def get_english_bank_service(
         usage,
         model=model,
         max_output_tokens=settings.english_bank_max_output_tokens,
+    )
+
+
+def get_english_practice_repository(db: Session = Depends(get_db)) -> EnglishPracticeRepository:
+    return SqlAlchemyEnglishPracticeRepository(db)
+
+
+def get_english_practice_service(
+    repository: EnglishPracticeRepository = Depends(get_english_practice_repository),
+) -> EnglishPracticeService:
+    return EnglishPracticeService(
+        repository, min_words_per_level=settings.english_min_words_per_level
     )
