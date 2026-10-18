@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -119,6 +120,9 @@ class EngWordContent(Base):
     # Empieza con la frase del listening y termina con la pregunta.
     reading_text: Mapped[str] = mapped_column(Text, nullable=False)
     reading_question: Mapped[str] = mapped_column(Text, nullable=False)
+    # Pista del vocabulario (español en A1-A2, ingles desde B1). Nula en el
+    # contenido generado antes de PROMPT_VERSION 2.
+    hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(String(60), nullable=False)
     # Version del prompt que lo genero: si el prompt cambia, se sabe que
     # contenido es viejo sin compararlo.
@@ -160,6 +164,10 @@ class EngPractice(Base):
     level: Mapped[str] = mapped_column(String(2), nullable=False)
     vocab_revealed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     vocab_used_synonym: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Uso "Ver pista" en el vocabulario. No cambia el check por defecto (acerto solo).
+    vocab_hint_used: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     listening_text_shown: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # Fase 1 del writing (dictado): lo que escribio de la frase escuchada y su
     # coincidencia (0-100), calculada en el backend al guardar.

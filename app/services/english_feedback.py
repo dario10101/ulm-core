@@ -116,6 +116,8 @@ def build_prompt(
         if practice.vocab_used_synonym
         else "wrote it correctly"
     )
+    if practice.vocab_hint_used and not practice.vocab_revealed:
+        vocabulary += " after reading the hint"
     listening = "needed to read the text" if practice.listening_text_shown else "understood by ear"
     speaking = (
         "skipped (no microphone)"

@@ -50,6 +50,9 @@ def seed_bank(db: Session, *, level: str = "A1", words: list[str] | None = None)
                 writing_prompt_es=f"Escribe sobre {lemma}." if level in ("A1", "A2") else None,
                 reading_text=READING.format(word=lemma),
                 reading_question="Do you like the park?",
+                hint="Algo que ves en el parque."
+                if level in ("A1", "A2")
+                else "Something in the park.",
                 model="gpt-6-luna",
                 prompt_version=1,
             )

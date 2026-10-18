@@ -24,6 +24,7 @@ from app.services.english_content import (
     GeneratedItem,
     contains_word,
     filter_accepted_answers,
+    validate_hint,
     validate_item,
 )
 from app.services.english_levels import EnglishLevel, level_config
@@ -69,6 +70,10 @@ def good_item(word: str, level: EnglishLevel = EnglishLevel.A1) -> dict:
         if level in (EnglishLevel.A1, EnglishLevel.A2)
         else "",
         "reading_text": f"{listening} It is very nice today. Do you like the park?",
+        "hint": "Mira bien la imagen."
+        if level in (EnglishLevel.A1, EnglishLevel.A2)
+        else "An animal that lives in the park.",
+        "translation_es": "perro",
     }
     return item
 
@@ -189,6 +194,7 @@ def test_valid_item_extracts_the_final_question():
     assert not isinstance(content, str)
     assert content.reading_question == "Do you like the park?"
     assert content.writing_prompt_es == "Escribe donde ves un dog."
+    assert content.hint == "Mira bien la imagen."
 
 
 @pytest.mark.parametrize(
@@ -204,6 +210,9 @@ def test_valid_item_extracts_the_final_question():
             "reading_without_final_question",
         ),
         ({"writing_prompt_es": ""}, "missing_spanish_prompt"),
+        ({"hint": ""}, "empty_hint"),
+        ({"hint": "Your pet dog."}, "hint_contains_word"),
+        ({"hint": "Un perro pequeño."}, "hint_contains_translation"),
     ],
 )
 def test_invalid_items_are_rejected_with_a_reason(change, reason):
@@ -221,6 +230,35 @@ def test_spanish_prompt_is_dropped_above_a2():
 
     assert not isinstance(content, str)
     assert content.writing_prompt_es is None
+
+
+def test_hint_must_not_give_away_the_word_or_its_synonyms():
+    assert validate_hint("Un animal que ladra.", "dog", []) is None
+    assert validate_hint("Many dogs live here.", "dog", []) == "hint_contains_word"
+    assert validate_hint("A puppy is a young one.", "dog", ["puppy"]) == "hint_contains_word"
+    assert validate_hint("x" * 121, "dog", []) == "hint_too_long"
+
+
+def test_hint_must_not_give_away_the_spanish_translation():
+    # Sin tildes ni mayusculas, y tambien en plural.
+    assert validate_hint("Cuerda gruesa para atar.", "rope", [], "cuerda") == (
+        "hint_contains_translation"
+    )
+    assert validate_hint("Aparato con cámaras.", "camera", [], "camara") == (
+        "hint_contains_translation"
+    )
+    # Las palabras cortas de la traduccion no cuentan.
+    assert (
+        validate_hint("Lugar de la casa para descansar.", "sitting room", [], "sala de estar")
+        is None
+    )
+
+
+def test_bank_instructions_ask_for_a_spanish_hint_only_in_basic_levels():
+    from app.services.english_content import build_instructions
+
+    assert "hint: one short clue in Spanish" in build_instructions(EnglishLevel.A2)
+    assert "hint: one short clue in simple English" in build_instructions(EnglishLevel.B1)
 
 
 def test_regular_inflections_count_as_the_word():
@@ -270,6 +308,8 @@ def test_fill_approves_words_with_image_and_valid_content(db_session, images, ge
         select(EngWordContent).where(EngWordContent.word_id == word.id)
     ).scalar_one()
     assert content.level == "A1"
+    assert content.hint == "Mira bien la imagen."
+    assert content.prompt_version == 2
     assert content.reading_question.endswith("?")
     selected = db_session.execute(
         select(EngWordImage).where(EngWordImage.word_id == word.id, EngWordImage.selected)

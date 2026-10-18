@@ -90,6 +90,7 @@ def _practice_read(draft: PracticeDraft) -> EnglishPracticeRead:
         writing_prompt_es=draft.content.writing_prompt_es,
         reading_text=draft.content.reading_text,
         reading_question=draft.content.reading_question,
+        hint=draft.content.hint,
         mastered_repeat=draft.mastered_repeat,
         config=EnglishLevelConfigRead(
             first_letter_hint=config.first_letter_hint,

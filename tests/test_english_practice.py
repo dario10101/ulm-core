@@ -100,6 +100,7 @@ def test_next_practice_returns_everything_including_the_answer(db_session):
     assert practice["image"]["url"] == f"https://img.example/{practice['lemma']}.png"
     assert practice["reading_text"].startswith(practice["listening_sentence"])
     assert practice["writing_prompt_es"]
+    assert practice["hint"] == "Algo que ves en el parque."
     assert practice["mastered_repeat"] is False
     assert practice["config"] == {
         "first_letter_hint": True,
@@ -302,3 +303,14 @@ def test_dictation_is_optional(db_session):
     practice = db_session.get(EngPractice, _complete()["saved"]["id"])
 
     assert (practice.dictation_text, practice.dictation_match_pct) == (None, None)
+
+
+def test_hint_use_is_saved_and_does_not_change_the_check(db_session):
+    seed_bank(db_session, words=["alpha"])
+    _set_level()
+
+    result = _complete(vocab_hint_used=True, vocab_revealed=False, mastered=True)
+
+    practice = db_session.get(EngPractice, result["saved"]["id"])
+    assert practice.vocab_hint_used is True
+    assert result["saved"]["mastered"] is True

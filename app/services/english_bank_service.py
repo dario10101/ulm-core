@@ -284,6 +284,7 @@ class EnglishBankService:
                     writing_prompt_es=content.writing_prompt_es,
                     reading_text=content.reading_text,
                     reading_question=content.reading_question,
+                    hint=content.hint,
                     model=result.model,
                     prompt_version=PROMPT_VERSION,
                 )

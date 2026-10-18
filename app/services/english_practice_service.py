@@ -224,6 +224,7 @@ class EnglishPracticeService:
             level=content.level,
             vocab_revealed=payload.vocab_revealed,
             vocab_used_synonym=payload.vocab_used_synonym,
+            vocab_hint_used=payload.vocab_hint_used,
             listening_text_shown=payload.listening_text_shown,
             dictation_text=payload.dictation_text or None,
             dictation_match_pct=(

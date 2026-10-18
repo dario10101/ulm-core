@@ -189,3 +189,11 @@ def test_feedback_saved_before_the_dictation_still_loads(db_session, generator):
     assert response.status_code == 200
     assert response.json()["dictation"] == ""
     assert generator.calls == []
+
+
+def test_the_prompt_says_the_hint_was_used(db_session, generator):
+    practice_id = _practice(db_session, vocab_hint_used=True)
+
+    client.post(f"{API}/practices/{practice_id}/feedback")
+
+    assert "wrote it correctly after reading the hint" in generator.calls[0]["prompt"]

@@ -7,6 +7,7 @@ pregunta, largos del nivel) lo comprueba el codigo.
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,9 +16,12 @@ from pydantic import BaseModel
 from app.services.english_levels import EnglishLevel, LevelConfig, level_config
 
 # Subirla cuando cambie el prompt: queda guardada con cada contenido.
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2  # 2: agrega la pista del vocabulario (hint)
 
 SPANISH_LEVELS = {EnglishLevel.A1, EnglishLevel.A2}
+
+# Pista corta: una frase, no un parrafo.
+HINT_MAX_CHARS = 120
 
 
 class GeneratedItem(BaseModel):
@@ -27,6 +31,9 @@ class GeneratedItem(BaseModel):
     writing_prompt: str
     writing_prompt_es: str
     reading_text: str
+    hint: str
+    # Solo para validar que la pista no regale la traduccion; no se guarda.
+    translation_es: str
 
 
 class GeneratedBatch(BaseModel):
@@ -40,6 +47,7 @@ class ValidContent:
     writing_prompt_es: str | None
     reading_text: str
     reading_question: str
+    hint: str
 
 
 def response_schema() -> dict[str, Any]:
@@ -56,6 +64,8 @@ def response_schema() -> dict[str, Any]:
             "writing_prompt": {"type": "string"},
             "writing_prompt_es": {"type": "string"},
             "reading_text": {"type": "string"},
+            "hint": {"type": "string"},
+            "translation_es": {"type": "string"},
         },
     }
     return {
@@ -65,6 +75,19 @@ def response_schema() -> dict[str, Any]:
         "required": ["items"],
         "properties": {"items": {"type": "array", "items": item}},
     }
+
+
+def hint_instruction(level: EnglishLevel) -> str:
+    """Regla de la pista del vocabulario. En A1-A2 va en español: en ingles,
+    la pista usaria palabras mas dificiles que la que hay que adivinar."""
+    language = "Spanish" if level in SPANISH_LEVELS else "simple English"
+    return (
+        f"hint: one short clue in {language} (max {HINT_MAX_CHARS} characters) that helps to "
+        "guess the word from its picture: what it is, what it is used for or where it is found. "
+        "It must NOT contain the word, any synonym, or its Spanish translation.\n"
+        "- translation_es: the most common Spanish translation of the word (only used to "
+        "check the hint; never shown to the learner)."
+    )
 
 
 def build_instructions(level: EnglishLevel) -> str:
@@ -91,6 +114,7 @@ def build_instructions(level: EnglishLevel) -> str:
         f"- reading_text: {sentences_lo}-{sentences_hi} sentences in total. It must start with "
         "the listening_sentence copied verbatim, continue the same topic with new sentences, "
         "and end with one question addressed to the reader, ending with '?'.\n"
+        f"- {hint_instruction(level)}\n"
         "Return the items in the same order as the input words."
     )
 
@@ -158,6 +182,39 @@ def filter_accepted_answers(lemma: str, candidates: list[str]) -> list[str]:
     return accepted
 
 
+def _plain(text: str) -> str:
+    """Minusculas y sin tildes: "Cámara" y "camara" cuentan igual."""
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def contains_translation(hint: str, translation: str) -> bool:
+    """La pista contiene alguna palabra (4+ letras) de la traduccion, o su plural.
+    Las cortas ("de", "la") quedan fuera: aparecen en cualquier pista."""
+    hint_words = set(re.findall(r"[a-z]+", _plain(hint)))
+    for word in re.findall(r"[a-z]+", _plain(translation)):
+        if len(word) >= 4 and hint_words & {word, word + "s", word + "es"}:
+            return True
+    return False
+
+
+def validate_hint(hint: str, lemma: str, synonyms: list[str], translation: str = "") -> str | None:
+    """Motivo por el que la pista no sirve, o None: vacia, larga, o que regala
+    la palabra (en ingles) o su traduccion al español. La traduccion la da el
+    mismo LLM: si se equivoca, la pista mala se cura en la curacion."""
+    clean = _normalize(hint)
+    if not clean:
+        return "empty_hint"
+    if len(clean) > HINT_MAX_CHARS:
+        return "hint_too_long"
+    for word in [lemma, *synonyms]:
+        if word.strip() and contains_word(clean, word.strip().lower()):
+            return "hint_contains_word"
+    if translation.strip() and contains_translation(clean, translation):
+        return "hint_contains_translation"
+    return None
+
+
 def validate_item(item: GeneratedItem, lemma: str, config: LevelConfig) -> ValidContent | str:
     """El contenido listo para guardar, o el motivo por el que no sirve."""
     listening = _normalize(item.listening_sentence)
@@ -181,10 +238,14 @@ def validate_item(item: GeneratedItem, lemma: str, config: LevelConfig) -> Valid
     spanish = item.writing_prompt_es.strip() or None
     if config.level in SPANISH_LEVELS and spanish is None:
         return "missing_spanish_prompt"
+    hint_problem = validate_hint(item.hint, lemma, item.accepted_answers, item.translation_es)
+    if hint_problem:
+        return hint_problem
     return ValidContent(
         listening_sentence=listening,
         writing_prompt=item.writing_prompt.strip(),
         writing_prompt_es=spanish if config.level in SPANISH_LEVELS else None,
         reading_text=reading,
         reading_question=last_sentence(reading),
+        hint=_normalize(item.hint),
     )

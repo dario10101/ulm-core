@@ -118,6 +118,8 @@ class EnglishPracticeRead(BaseModel):
     writing_prompt_es: str | None
     reading_text: str
     reading_question: str
+    # Pista del vocabulario, detras de "Ver pista" (nula si no hay).
+    hint: str | None
     # Palabra ya dominada que se repite (D19): el front no muestra el check.
     mastered_repeat: bool
     config: EnglishLevelConfigRead
@@ -132,6 +134,7 @@ class EnglishPracticeWrite(BaseModel):
     content_id: int
     vocab_revealed: bool
     vocab_used_synonym: bool = False
+    vocab_hint_used: bool = False
     listening_text_shown: bool
     # Dictado (fase 1 del writing). La coincidencia la calcula el backend.
     dictation_text: str | None = Field(default=None, max_length=1000)
