@@ -73,12 +73,20 @@ class EnglishLevelAvailabilityRead(BaseModel):
     available: bool
 
 
+class EnglishLevelSuggestionRead(BaseModel):
+    direction: Literal["up", "down"]
+    level: EnglishLevel
+    # performance: por las ultimas practicas; completed: domino todo el nivel.
+    reason: Literal["performance", "completed"]
+
+
 class EnglishSettingsRead(BaseModel):
     # Nulo hasta que el usuario elige su nivel.
     level: EnglishLevel | None
     levels: list[EnglishLevelAvailabilityRead]
     # Ya domina todas las palabras de su nivel (D19).
     level_completed: bool
+    suggestion: EnglishLevelSuggestionRead | None = None
 
 
 class EnglishSettingsWrite(BaseModel):

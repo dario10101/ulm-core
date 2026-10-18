@@ -25,6 +25,7 @@ from app.schemas.english import (
     EnglishImageRead,
     EnglishLevelAvailabilityRead,
     EnglishLevelConfigRead,
+    EnglishLevelSuggestionRead,
     EnglishMasteredWrite,
     EnglishPracticeRead,
     EnglishPracticeSavedRead,
@@ -59,6 +60,15 @@ def _settings_read(view: SettingsView) -> EnglishSettingsRead:
             for a in view.levels
         ],
         level_completed=view.level_completed,
+        suggestion=(
+            EnglishLevelSuggestionRead(
+                direction=view.suggestion.direction,
+                level=view.suggestion.level,
+                reason=view.suggestion.reason,
+            )
+            if view.suggestion
+            else None
+        ),
     )
 
 
@@ -111,6 +121,18 @@ def update_settings(
 ) -> EnglishSettingsRead:
     try:
         return _settings_read(service.set_level(user_id, payload.level))
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.post("/settings/level-suggestion/dismiss", response_model=EnglishSettingsRead)
+def dismiss_level_suggestion(
+    user_id: int = Depends(get_current_user_id),
+    service: EnglishPracticeService = Depends(get_english_practice_service),
+) -> EnglishSettingsRead:
+    """ "No por ahora" en la sugerencia de nivel."""
+    try:
+        return _settings_read(service.dismiss_suggestion(user_id))
     except DomainError as exc:
         raise http_error(exc)
 

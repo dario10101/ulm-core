@@ -27,6 +27,7 @@ from app.db.models.english import (
 )
 from app.repositories.english_practice_repository import EnglishPracticeRepository
 from app.schemas.english import EnglishPracticeWrite
+from app.services.english_level_suggestion import WINDOW, LevelSuggestion, suggest
 from app.services.english_levels import LEVEL_ORDER, EnglishLevel, level_config
 from app.services.errors import (
     EnglishBankEmptyError,
@@ -53,6 +54,8 @@ class SettingsView:
     levels: list[LevelAvailability]
     # Ya domina todas las palabras de su nivel (D19): la UI lo avisa.
     level_completed: bool
+    # Sugerencia de subir o bajar (seccion 4.1); None si no aplica.
+    suggestion: LevelSuggestion | None = None
 
 
 @dataclass(frozen=True)
@@ -91,12 +94,37 @@ class EnglishPracticeService:
 
     def get_settings(self, user_id: int) -> SettingsView:
         settings = self._repository.get_settings(user_id=user_id)
-        level = EnglishLevel(settings.level) if settings else None
-        completed = (
-            level is not None
-            and self._repository.count_unmastered_ready(level.value, user_id=user_id) == 0
+        levels = self._availability()
+        if settings is None:
+            return SettingsView(level=None, levels=levels, level_completed=False)
+        level = EnglishLevel(settings.level)
+        completed = self._repository.count_unmastered_ready(level.value, user_id=user_id) == 0
+        practices = self._repository.recent_practices(
+            level.value,
+            user_id=user_id,
+            limit=WINDOW,
+            after=settings.level_suggestion_dismissed_at,
         )
-        return SettingsView(level=level, levels=self._availability(), level_completed=completed)
+        suggestion = suggest(
+            level=level,
+            practices=practices,
+            level_completed=completed,
+            dismissed=settings.level_suggestion_dismissed_at is not None,
+            available={a.level for a in levels if a.available},
+        )
+        return SettingsView(
+            level=level, levels=levels, level_completed=completed, suggestion=suggestion
+        )
+
+    def dismiss_suggestion(self, user_id: int) -> SettingsView:
+        """ "No por ahora": no se vuelve a sugerir hasta juntar WINDOW practicas nuevas."""
+        settings = self._repository.get_settings(user_id=user_id)
+        if settings is None:
+            raise EnglishLevelNotSetError()
+        settings.level_suggestion_dismissed_at = _now()
+        settings.updated_at = _now()
+        self._repository.flush()
+        return self.get_settings(user_id)
 
     def set_level(self, user_id: int, level: EnglishLevel) -> SettingsView:
         available = {a.level for a in self._availability() if a.available}
