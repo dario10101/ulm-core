@@ -13,7 +13,11 @@ from app.api.deps import get_image_search, get_text_generator
 from app.core.config import settings
 from app.db.models.ai_usage import AiUsageEvent
 from app.db.models.english import EngWord, EngWordContent, EngWordImage
-from app.integrations.image_search import ImageCandidate
+from app.integrations.image_search import (
+    ImageCandidate,
+    ImageSearchError,
+    MultiSourceImageSearch,
+)
 from app.integrations.openai_client import GeneratedText, TextGenerationError
 from app.main import app
 from app.services.english_content import (
@@ -409,3 +413,66 @@ def test_non_admin_gets_403(monkeypatch):
 
     assert client.get(f"{API}/levels").status_code == 403
     assert client.post(f"{API}/levels/A1/import").status_code == 403
+
+
+# --- Orden de las fuentes de imagenes ---
+
+
+class FakeSource:
+    def __init__(self, name: str, results: int = 0, fail: bool = False) -> None:
+        self.name = name
+        self.results = results
+        self.fail = fail
+        self.calls = 0
+
+    def search(self, query: str, *, limit: int) -> list[ImageCandidate]:
+        self.calls += 1
+        if self.fail:
+            raise ImageSearchError(f"{self.name} caido")
+        return [
+            ImageCandidate(
+                url=f"https://{self.name}/{query}/{i}.png",
+                source=self.name,
+                license="x",
+                attribution="x",
+                page_url=None,
+            )
+            for i in range(min(self.results, limit))
+        ]
+
+
+def _search(arasaac: FakeSource, openverse: FakeSource, pexels: FakeSource | None = None):
+    return MultiSourceImageSearch(arasaac=arasaac, openverse=openverse, pexels=pexels)
+
+
+def test_openverse_is_not_used_to_complete_candidates():
+    arasaac, openverse = FakeSource("arasaac", results=2), FakeSource("openverse", results=5)
+
+    found = _search(arasaac, openverse).find("run", pos="verb", limit=5)
+
+    # Solo 2 candidatas, pero Openverse no se consulta (cupo de 200/dia).
+    assert [c.source for c in found] == ["arasaac", "arasaac"]
+    assert openverse.calls == 0
+
+
+def test_openverse_is_the_fallback_when_nothing_else_has_images():
+    arasaac, openverse = FakeSource("arasaac"), FakeSource("openverse", results=5)
+    pexels = FakeSource("pexels")
+
+    found = _search(arasaac, openverse, pexels).find("idea", pos="noun", limit=5)
+
+    assert {c.source for c in found} == {"openverse"}
+    assert len(found) == 5
+    assert (pexels.calls, arasaac.calls, openverse.calls) == (1, 1, 1)
+
+
+def test_nouns_combine_pexels_and_arasaac_and_a_failing_source_is_skipped():
+    pexels, arasaac = FakeSource("pexels", results=3), FakeSource("arasaac", results=5)
+    openverse = FakeSource("openverse", results=5)
+
+    found = _search(arasaac, openverse, pexels).find("apple", pos="noun", limit=5)
+    assert [c.source for c in found] == ["pexels"] * 3 + ["arasaac"] * 2
+
+    broken = FakeSource("arasaac", fail=True)
+    fallback = _search(broken, openverse).find("happy", pos="adjective", limit=5)
+    assert {c.source for c in fallback} == {"openverse"}

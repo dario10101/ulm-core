@@ -154,8 +154,13 @@ class ImageSearch(Protocol):
 
 class MultiSourceImageSearch:
     """Consulta las fuentes en el orden que conviene a cada categoria (seccion 5):
-    fotos primero para sustantivos, pictogramas primero para verbos y adjetivos.
-    Una fuente caida se salta: las demas pueden alcanzar."""
+    fotos primero para sustantivos, pictogramas para verbos y adjetivos. Una
+    fuente caida se salta: las demas pueden alcanzar.
+
+    Openverse es solo respaldo: se consulta unicamente si las principales no
+    devolvieron ninguna imagen, no para completar candidatas. Sin key permite
+    20 pedidos/min y 200/dia (cabeceras x-ratelimit-*): usarlo en cada palabra
+    agotaba el cupo en un solo llenado de 100."""
 
     def __init__(
         self,
@@ -168,23 +173,27 @@ class MultiSourceImageSearch:
         self._openverse = openverse
         self._pexels = pexels
 
-    def _sources_for(self, pos: str) -> list[ImageSource]:
-        if pos == "noun":
-            ordered = [self._pexels, self._arasaac, self._openverse]
-        else:
-            ordered = [self._arasaac, self._openverse]
+    def _primary_sources(self, pos: str) -> list[ImageSource]:
+        ordered = [self._pexels, self._arasaac] if pos == "noun" else [self._arasaac]
         return [source for source in ordered if source is not None]
 
     def find(self, word: str, *, pos: str, limit: int) -> list[ImageCandidate]:
         found: list[ImageCandidate] = []
-        for source in self._sources_for(pos):
+        for source in self._primary_sources(pos):
             if len(found) >= limit:
                 break
-            try:
-                found.extend(source.search(word, limit=limit - len(found)))
-            except ImageSearchError as exc:
-                logger.warning("Fuente de imagenes fallo para %r: %s", word, exc)
+            found.extend(self._search(source, word, limit - len(found)))
+        if not found:
+            found = self._search(self._openverse, word, limit)
         return found[:limit]
+
+    @staticmethod
+    def _search(source: ImageSource, word: str, limit: int) -> list[ImageCandidate]:
+        try:
+            return source.search(word, limit=limit)
+        except ImageSearchError as exc:
+            logger.warning("Fuente de imagenes %s fallo para %r: %s", source.name, word, exc)
+            return []
 
 
 def build_image_search(*, pexels_api_key: str, timeout_seconds: float) -> MultiSourceImageSearch:
