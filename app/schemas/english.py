@@ -143,3 +143,18 @@ class EnglishPracticeSavedRead(BaseModel):
 
 class EnglishMasteredWrite(BaseModel):
     mastered: bool
+
+
+class EnglishDiffOpRead(BaseModel):
+    # equal | missing | extra | changed
+    kind: str
+    expected: list[str]
+    said: list[str]
+
+
+class EnglishSpeechRead(BaseModel):
+    transcript: str
+    duration_seconds: float
+    # Solo en la fase de lectura: comparacion contra el texto esperado.
+    match_pct: float | None
+    diff: list[EnglishDiffOpRead] | None

@@ -3,11 +3,20 @@
 El banco se administra aparte, en /system/english (solo admin).
 """
 
-from fastapi import APIRouter, Depends
+from typing import Literal
 
-from app.api.deps import get_current_user_id, get_english_practice_service
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from app.api.deps import (
+    get_current_user_id,
+    get_english_practice_service,
+    get_english_speech_service,
+)
 from app.api.errors import http_error
+from app.core.logging import get_logger
+from app.integrations.speech_client import TranscriptionError
 from app.schemas.english import (
+    EnglishDiffOpRead,
     EnglishImageRead,
     EnglishLevelAvailabilityRead,
     EnglishLevelConfigRead,
@@ -17,6 +26,7 @@ from app.schemas.english import (
     EnglishPracticeWrite,
     EnglishSettingsRead,
     EnglishSettingsWrite,
+    EnglishSpeechRead,
 )
 from app.services.english_levels import EnglishLevel, level_config
 from app.services.english_practice_service import (
@@ -25,7 +35,10 @@ from app.services.english_practice_service import (
     SavedPractice,
     SettingsView,
 )
-from app.services.errors import DomainError
+from app.services.english_speech_service import EnglishSpeechService
+from app.services.errors import AiNotConfiguredError, DomainError
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/english", tags=["english"])
 
@@ -133,3 +146,43 @@ def set_mastered(
         return _saved_read(service.set_mastered(user_id, practice_id, payload.mastered))
     except DomainError as exc:
         raise http_error(exc)
+
+
+@router.post("/speech", response_model=EnglishSpeechRead)
+def transcribe_speech(
+    audio: UploadFile = File(),
+    content_id: int = Form(),
+    phase: Literal["reading", "free"] = Form(),
+    duration_seconds: float = Form(ge=0),
+    user_id: int = Depends(get_current_user_id),
+    service: EnglishSpeechService = Depends(get_english_speech_service),
+) -> EnglishSpeechRead:
+    """Transcribe una grabacion del speaking; en la lectura, la compara con el
+    texto esperado. No necesita la practica guardada (D8)."""
+    try:
+        result = service.transcribe(
+            user_id=user_id,
+            content_id=content_id,
+            phase=phase,
+            audio=audio.file.read(),
+            content_type=audio.content_type or "",
+            client_seconds=duration_seconds,
+        )
+    except AiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except TranscriptionError as exc:
+        logger.warning("Fallo la transcripcion: %s", exc)
+        raise HTTPException(status_code=502, detail="No se pudo transcribir el audio")
+    except DomainError as exc:
+        raise http_error(exc)
+    diff = result.diff
+    return EnglishSpeechRead(
+        transcript=result.transcript,
+        duration_seconds=result.duration_seconds,
+        match_pct=diff.match_pct if diff else None,
+        diff=(
+            [EnglishDiffOpRead(kind=op.kind, expected=op.expected, said=op.said) for op in diff.ops]
+            if diff
+            else None
+        ),
+    )

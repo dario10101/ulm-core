@@ -527,3 +527,12 @@ class EnglishContentMismatchError(ValidationError):
 class EnglishWritingTooShortError(ValidationError):
     def __init__(self, minimum: int) -> None:
         super().__init__(f"El texto del writing necesita al menos {minimum} caracteres")
+
+
+class EnglishContentNotFoundError(NotFoundError):
+    def __init__(self, content_id: int) -> None:
+        super().__init__(f"El contenido {content_id} no existe")
+
+
+class EnglishAudioInvalidError(ValidationError):
+    """Audio vacio, muy grande, muy largo o en un formato que no se acepta."""

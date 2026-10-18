@@ -24,6 +24,7 @@ from app.integrations.google_oauth import GoogleOAuthClient, HttpGoogleOAuthClie
 from app.integrations.holiday_provider import HolidayProvider, PythonHolidaysProvider
 from app.integrations.image_search import ImageSearch, build_image_search
 from app.integrations.openai_client import OpenAiTextGenerator, TextGenerator
+from app.integrations.speech_client import OpenAiSpeechTranscriber, SpeechTranscriber
 from app.repositories.ai_usage_repository import AiUsageRepository
 from app.repositories.blog_entity_repository import BlogEntityRepository
 from app.repositories.category_repository import CategoryRepository
@@ -100,6 +101,7 @@ from app.services.cld_task_service import CldTaskService
 from app.services.cld_user_event_service import CldUserEventService
 from app.services.english_bank_service import EnglishBankService
 from app.services.english_practice_service import EnglishPracticeService
+from app.services.english_speech_service import EnglishSpeechService
 from app.services.expense_service import ExpenseService
 from app.services.finance_catalog_service import FinanceCatalogService
 from app.services.finance_params_service import FinanceParamsService
@@ -524,4 +526,29 @@ def get_english_practice_service(
 ) -> EnglishPracticeService:
     return EnglishPracticeService(
         repository, min_words_per_level=settings.english_min_words_per_level
+    )
+
+
+@lru_cache
+def get_speech_transcriber() -> SpeechTranscriber | None:
+    """Uno solo por proceso. None sin OPENAI_API_KEY (el service responde 503)."""
+    if not settings.openai_api_key:
+        return None
+    return OpenAiSpeechTranscriber(
+        api_key=settings.openai_api_key, timeout_seconds=settings.openai_timeout_seconds
+    )
+
+
+def get_english_speech_service(
+    repository: EnglishPracticeRepository = Depends(get_english_practice_repository),
+    transcriber: SpeechTranscriber | None = Depends(get_speech_transcriber),
+    usage: AiUsageRecorder = Depends(get_ai_usage_recorder),
+) -> EnglishSpeechService:
+    return EnglishSpeechService(
+        repository,
+        transcriber,
+        usage,
+        model=settings.english_transcription_model,
+        usd_per_minute=settings.english_transcription_usd_per_minute,
+        max_bytes=settings.english_max_audio_bytes,
     )
