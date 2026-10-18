@@ -100,6 +100,7 @@ from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
 from app.services.cld_user_event_service import CldUserEventService
 from app.services.english_bank_service import EnglishBankService
+from app.services.english_feedback_service import EnglishFeedbackService
 from app.services.english_practice_service import EnglishPracticeService
 from app.services.english_speech_service import EnglishSpeechService
 from app.services.expense_service import ExpenseService
@@ -551,4 +552,19 @@ def get_english_speech_service(
         model=settings.english_transcription_model,
         usd_per_minute=settings.english_transcription_usd_per_minute,
         max_bytes=settings.english_max_audio_bytes,
+    )
+
+
+def get_english_feedback_service(
+    repository: EnglishPracticeRepository = Depends(get_english_practice_repository),
+    generator: TextGenerator | None = Depends(get_text_generator),
+    usage: AiUsageRecorder = Depends(get_ai_usage_recorder),
+    model: AiModel = Depends(get_english_model),
+) -> EnglishFeedbackService:
+    return EnglishFeedbackService(
+        repository,
+        generator,
+        usage,
+        model=model,
+        max_output_tokens=settings.english_feedback_max_output_tokens,
     )

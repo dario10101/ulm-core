@@ -9,6 +9,8 @@ from typing import Protocol
 
 from app.db.models.english import (
     EngPractice,
+    EngPracticeFeedback,
+    EngUserMemory,
     EngUserSettings,
     EngUserWord,
     EngWord,
@@ -70,5 +72,15 @@ class EnglishPracticeRepository(Protocol):
         """Las ultimas `limit` practicas del nivel (mas nueva primero),
         opcionalmente solo las posteriores a `after`."""
         ...
+
+    def get_feedback(self, practice_id: int) -> EngPracticeFeedback | None:
+        """Sin user_id: el que llama ya verifico que la practica es del usuario."""
+        ...
+
+    def add_feedback(self, feedback: EngPracticeFeedback) -> None: ...
+
+    def get_memory(self, *, user_id: int) -> EngUserMemory | None: ...
+
+    def add_memory(self, memory: EngUserMemory) -> None: ...
 
     def flush(self) -> None: ...

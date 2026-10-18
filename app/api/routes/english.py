@@ -6,17 +6,22 @@ El banco se administra aparte, en /system/english (solo admin).
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
 from app.api.deps import (
     get_current_user_id,
+    get_english_feedback_service,
     get_english_practice_service,
     get_english_speech_service,
 )
 from app.api.errors import http_error
 from app.core.logging import get_logger
+from app.integrations.openai_client import TextGenerationError
 from app.integrations.speech_client import TranscriptionError
 from app.schemas.english import (
+    EnglishCorrectionRead,
     EnglishDiffOpRead,
+    EnglishFeedbackRead,
     EnglishImageRead,
     EnglishLevelAvailabilityRead,
     EnglishLevelConfigRead,
@@ -28,6 +33,7 @@ from app.schemas.english import (
     EnglishSettingsWrite,
     EnglishSpeechRead,
 )
+from app.services.english_feedback_service import EnglishFeedbackService
 from app.services.english_levels import EnglishLevel, level_config
 from app.services.english_practice_service import (
     EnglishPracticeService,
@@ -185,4 +191,51 @@ def transcribe_speech(
             if diff
             else None
         ),
+    )
+
+
+@router.post(
+    "/practices/{practice_id}/feedback",
+    response_model=EnglishFeedbackRead,
+    responses={502: {"description": "El proveedor de IA fallo o respondio mal"}},
+)
+def practice_feedback(
+    practice_id: int,
+    user_id: int = Depends(get_current_user_id),
+    service: EnglishFeedbackService = Depends(get_english_feedback_service),
+):
+    """Feedback de la practica (1 llamada al LLM). Si ya existe, devuelve el
+    guardado sin volver a pagar."""
+    try:
+        outcome = service.get_or_create(user_id, practice_id)
+    except AiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except TextGenerationError as exc:
+        logger.warning("Fallo el proveedor de IA en el feedback: %s", exc)
+        raise HTTPException(
+            status_code=502, detail="No se pudo obtener respuesta del proveedor de IA"
+        )
+    except DomainError as exc:
+        raise http_error(exc)
+    if outcome.feedback is None:
+        # Respuesta pagada pero inutilizable: 502 SIN excepcion, para que el
+        # request se commitee y quede registrado el consumo.
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "La IA respondio en un formato invalido; intenta de nuevo"},
+        )
+    feedback = outcome.feedback
+    return EnglishFeedbackRead(
+        summary=feedback.summary,
+        vocabulary=feedback.vocabulary,
+        writing_corrections=[
+            EnglishCorrectionRead(**c.model_dump()) for c in feedback.writing_corrections
+        ],
+        reading_observations=feedback.reading_observations,
+        speaking_corrections=[
+            EnglishCorrectionRead(**c.model_dump()) for c in feedback.speaking_corrections
+        ],
+        answered_question=feedback.answered_question,
+        tips=feedback.tips,
+        model=outcome.model,
     )

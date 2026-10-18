@@ -158,3 +158,20 @@ class EnglishSpeechRead(BaseModel):
     # Solo en la fase de lectura: comparacion contra el texto esperado.
     match_pct: float | None
     diff: list[EnglishDiffOpRead] | None
+
+
+class EnglishCorrectionRead(BaseModel):
+    original: str
+    corrected: str
+    explanation: str
+
+
+class EnglishFeedbackRead(BaseModel):
+    summary: str
+    vocabulary: str
+    writing_corrections: list[EnglishCorrectionRead]
+    reading_observations: list[str]
+    speaking_corrections: list[EnglishCorrectionRead]
+    answered_question: bool
+    tips: list[str]
+    model: str

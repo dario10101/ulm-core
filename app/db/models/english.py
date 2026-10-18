@@ -187,3 +187,30 @@ class EngUserWord(Base):
     times_practiced: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_practiced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EngPracticeFeedback(Base):
+    """Feedback del LLM sobre una practica, pedido por el usuario (7.2). Se
+    guarda para volver a verlo sin pagar de nuevo."""
+
+    __tablename__ = "eng_practice_feedback"
+
+    practice_id: Mapped[int] = mapped_column(ForeignKey("eng_practices.id"), primary_key=True)
+    # Forma validada por FeedbackResponse (app/services/english_feedback.py).
+    feedback: Mapped[dict[str, Any]] = mapped_column(JsonList, nullable=False)
+    model: Mapped[str] = mapped_column(String(60), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EngUserMemory(Base):
+    """Memoria del usuario sin contexto en el LLM (plan, seccion 6): un
+    resumen corto de errores recurrentes y fortalezas que el propio feedback
+    reescribe. Tamaño acotado = costo por llamada constante."""
+
+    __tablename__ = "eng_user_memory"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

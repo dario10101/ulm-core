@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.db.models.english import (
     WORD_APPROVED,
     EngPractice,
+    EngPracticeFeedback,
+    EngUserMemory,
     EngUserSettings,
     EngUserWord,
     EngWord,
@@ -147,6 +149,18 @@ class SqlAlchemyEnglishPracticeRepository:
             .scalars()
             .all()
         )
+
+    def get_feedback(self, practice_id: int) -> EngPracticeFeedback | None:
+        return self._db.get(EngPracticeFeedback, practice_id)
+
+    def add_feedback(self, feedback: EngPracticeFeedback) -> None:
+        self._db.add(feedback)
+
+    def get_memory(self, *, user_id: int) -> EngUserMemory | None:
+        return self._db.get(EngUserMemory, user_id)
+
+    def add_memory(self, memory: EngUserMemory) -> None:
+        self._db.add(memory)
 
     def flush(self) -> None:
         self._db.flush()
