@@ -161,3 +161,31 @@ def test_feedback_of_another_users_practice_is_404(db_session, generator, other_
 
     assert client.post(f"{API}/practices/{practice_id}/feedback").status_code == 404
     assert generator.calls == []
+
+
+def test_the_dictation_goes_in_the_prompt(db_session, generator):
+    practice_id = _practice(db_session, dictation_text="I see the dog in park")
+
+    body = client.post(f"{API}/practices/{practice_id}/feedback").json()
+
+    prompt = generator.calls[0]["prompt"]
+    assert "Dictation (wrote the listening sentence): I see the dog in park" in prompt
+    assert "Dictation diff: match" in prompt
+    assert body["dictation"] == ""  # el falso no lo trae: vale el default
+
+
+def test_feedback_saved_before_the_dictation_still_loads(db_session, generator):
+    practice_id = _practice(db_session)
+    old = {k: v for k, v in FEEDBACK.items() if k != "dictation"}
+    db_session.add(
+        EngPracticeFeedback(
+            practice_id=practice_id, feedback=old, model="m", input_tokens=1, output_tokens=1
+        )
+    )
+    db_session.commit()
+
+    response = client.post(f"{API}/practices/{practice_id}/feedback")
+
+    assert response.status_code == 200
+    assert response.json()["dictation"] == ""
+    assert generator.calls == []

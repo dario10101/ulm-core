@@ -20,6 +20,8 @@ from app.integrations.openai_client import TextGenerationError
 from app.integrations.speech_client import TranscriptionError
 from app.schemas.english import (
     EnglishCorrectionRead,
+    EnglishDictationRead,
+    EnglishDictationWrite,
     EnglishDiffOpRead,
     EnglishFeedbackRead,
     EnglishImageRead,
@@ -149,6 +151,26 @@ def next_practice(
         raise http_error(exc)
 
 
+@router.post("/dictation/check", response_model=EnglishDictationRead)
+def check_dictation(
+    payload: EnglishDictationWrite,
+    service: EnglishPracticeService = Depends(get_english_practice_service),
+) -> EnglishDictationRead:
+    """Fase 1 del writing: compara lo que escribio con la frase del listening.
+    Sin LLM ni costo; no guarda nada (va con la practica al cierre)."""
+    try:
+        diff, expected = service.check_dictation(payload.content_id, payload.text)
+    except DomainError as exc:
+        raise http_error(exc)
+    return EnglishDictationRead(
+        match_pct=diff.match_pct,
+        diff=[
+            EnglishDiffOpRead(kind=op.kind, expected=op.expected, said=op.said) for op in diff.ops
+        ],
+        expected=expected,
+    )
+
+
 @router.post("/practices", response_model=EnglishPracticeSavedRead, status_code=201)
 def save_practice(
     payload: EnglishPracticeWrite,
@@ -250,6 +272,7 @@ def practice_feedback(
     return EnglishFeedbackRead(
         summary=feedback.summary,
         vocabulary=feedback.vocabulary,
+        dictation=feedback.dictation,
         writing_corrections=[
             EnglishCorrectionRead(**c.model_dump()) for c in feedback.writing_corrections
         ],

@@ -161,6 +161,10 @@ class EngPractice(Base):
     vocab_revealed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     vocab_used_synonym: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     listening_text_shown: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Fase 1 del writing (dictado): lo que escribio de la frase escuchada y su
+    # coincidencia (0-100), calculada en el backend al guardar.
+    dictation_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dictation_match_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     writing_text: Mapped[str] = mapped_column(Text, nullable=False)
     reading_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Coincidencia de la lectura con el texto esperado (0-100), del diff local.

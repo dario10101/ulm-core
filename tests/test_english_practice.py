@@ -249,3 +249,56 @@ def test_a_user_cannot_change_another_users_practice(db_session, other_user):
         select(EngUserWord).where(EngUserWord.user_id == OTHER_USER_ID)
     ).scalar_one()
     assert user_word.mastered is True
+
+
+# --- Dictado (fase 1 del writing, D33) ---
+
+
+def test_dictation_is_compared_with_the_listening_sentence(db_session):
+    seed_bank(db_session, words=["alpha"])
+    _set_level()
+    practice = client.get(f"{API}/practices/next").json()
+
+    response = client.post(
+        f"{API}/dictation/check",
+        json={"content_id": practice["content_id"], "text": "I see the alpha in park"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["expected"] == "I see the alpha in the park."
+    assert body["match_pct"] == round(100 * 6 / 7, 1)
+    assert {"kind": "missing", "expected": ["the"], "said": []} in body["diff"]
+    # Comparar no guarda nada (D8).
+    assert db_session.execute(select(EngPractice)).first() is None
+
+
+def test_dictation_check_needs_existing_content_and_text():
+    assert (
+        client.post(f"{API}/dictation/check", json={"content_id": 999, "text": "x"}).status_code
+        == 404
+    )
+    assert (
+        client.post(f"{API}/dictation/check", json={"content_id": 1, "text": "  "}).status_code
+        == 422
+    )
+
+
+def test_saving_computes_the_dictation_match_on_the_server(db_session):
+    seed_bank(db_session, words=["alpha"])
+    _set_level()
+
+    result = _complete(dictation_text="I see the alpha in the park")
+
+    practice = db_session.get(EngPractice, result["saved"]["id"])
+    assert practice.dictation_text == "I see the alpha in the park"
+    assert practice.dictation_match_pct == 100.0
+
+
+def test_dictation_is_optional(db_session):
+    seed_bank(db_session, words=["alpha"])
+    _set_level()
+
+    practice = db_session.get(EngPractice, _complete()["saved"]["id"])
+
+    assert (practice.dictation_text, practice.dictation_match_pct) == (None, None)

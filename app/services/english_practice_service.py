@@ -29,9 +29,11 @@ from app.repositories.english_practice_repository import EnglishPracticeReposito
 from app.schemas.english import EnglishPracticeWrite
 from app.services.english_level_suggestion import WINDOW, LevelSuggestion, suggest
 from app.services.english_levels import LEVEL_ORDER, EnglishLevel, level_config
+from app.services.english_reading_diff import ReadingDiff, compare_reading
 from app.services.errors import (
     EnglishBankEmptyError,
     EnglishContentMismatchError,
+    EnglishContentNotFoundError,
     EnglishLevelNotSetError,
     EnglishLevelUnavailableError,
     EnglishPracticeNotFoundError,
@@ -223,6 +225,12 @@ class EnglishPracticeService:
             vocab_revealed=payload.vocab_revealed,
             vocab_used_synonym=payload.vocab_used_synonym,
             listening_text_shown=payload.listening_text_shown,
+            dictation_text=payload.dictation_text or None,
+            dictation_match_pct=(
+                compare_reading(content.listening_sentence, payload.dictation_text).match_pct
+                if payload.dictation_text
+                else None
+            ),
             writing_text=payload.writing_text.strip(),
             reading_transcript=payload.reading_transcript,
             reading_match_pct=payload.reading_match_pct,
@@ -240,6 +248,14 @@ class EnglishPracticeService:
             self._apply_mastered(user_word, payload.mastered, now)
         self._repository.flush()
         return SavedPractice(practice=practice, mastered=user_word.mastered)
+
+    def check_dictation(self, content_id: int, text: str) -> tuple[ReadingDiff, str]:
+        """Compara el dictado con la frase del listening. Codigo puro, sin LLM ni
+        costo; no guarda nada (se guarda con la practica, D8)."""
+        content = self._repository.get_content(content_id)
+        if content is None:
+            raise EnglishContentNotFoundError(content_id)
+        return compare_reading(content.listening_sentence, text), content.listening_sentence
 
     def set_mastered(self, user_id: int, practice_id: int, mastered: bool) -> SavedPractice:
         practice = self._repository.get_practice(practice_id, user_id=user_id)

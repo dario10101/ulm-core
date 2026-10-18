@@ -133,6 +133,8 @@ class EnglishPracticeWrite(BaseModel):
     vocab_revealed: bool
     vocab_used_synonym: bool = False
     listening_text_shown: bool
+    # Dictado (fase 1 del writing). La coincidencia la calcula el backend.
+    dictation_text: str | None = Field(default=None, max_length=1000)
     writing_text: str = Field(max_length=5000)
     reading_transcript: str | None = Field(default=None, max_length=5000)
     reading_match_pct: float | None = Field(default=None, ge=0, le=100)
@@ -177,9 +179,25 @@ class EnglishCorrectionRead(BaseModel):
 class EnglishFeedbackRead(BaseModel):
     summary: str
     vocabulary: str
+    dictation: str
     writing_corrections: list[EnglishCorrectionRead]
     reading_observations: list[str]
     speaking_corrections: list[EnglishCorrectionRead]
     answered_question: bool
     tips: list[str]
     model: str
+
+
+class EnglishDictationWrite(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    content_id: int
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class EnglishDictationRead(BaseModel):
+    """Comparacion del dictado contra la frase del listening (sin LLM)."""
+
+    match_pct: float
+    diff: list[EnglishDiffOpRead]
+    expected: str

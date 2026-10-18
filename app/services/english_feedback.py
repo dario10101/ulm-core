@@ -27,6 +27,8 @@ class Correction(BaseModel):
 class FeedbackResponse(BaseModel):
     summary: str
     vocabulary: str
+    # Default: los feedbacks guardados antes del dictado no lo tienen.
+    dictation: str = ""
     writing_corrections: list[Correction]
     reading_observations: list[str]
     speaking_corrections: list[Correction]
@@ -55,6 +57,7 @@ def response_schema() -> dict[str, Any]:
         "properties": {
             "summary": {"type": "string"},
             "vocabulary": {"type": "string"},
+            "dictation": {"type": "string"},
             "writing_corrections": {"type": "array", "items": correction},
             "reading_observations": strings,
             "speaking_corrections": {"type": "array", "items": correction},
@@ -74,6 +77,8 @@ def build_instructions(level: EnglishLevel) -> str:
         "keep 'original' and 'corrected' in English.\n"
         "- summary: 1-2 sentences on how it went.\n"
         "- vocabulary: one short comment on the vocabulary step.\n"
+        "- dictation: one short comment on the dictation (writing the sentence they heard), "
+        "based on its word diff: words missed by ear or misspelled. Empty string if none.\n"
         "- writing_corrections: real mistakes in the written answer only (grammar, word choice, "
         "spelling). Empty list if there are none. Do not rewrite correct sentences.\n"
         "- reading_observations: based ONLY on the word diff given (missing or changed words). "
@@ -89,10 +94,10 @@ def build_instructions(level: EnglishLevel) -> str:
     )
 
 
-def _diff_summary(content: EngWordContent, transcript: str | None) -> str:
-    if not transcript:
-        return "(no reading recording)"
-    diff = compare_reading(content.reading_text, transcript)
+def _diff_summary(expected: str, actual: str | None, missing: str) -> str:
+    if not actual:
+        return missing
+    diff = compare_reading(expected, actual)
     problems = [
         f"{op.kind}: expected '{' '.join(op.expected)}' said '{' '.join(op.said)}'"
         for op in diff.ops
@@ -117,16 +122,24 @@ def build_prompt(
         if practice.speaking_skipped
         else practice.free_transcript or "(nothing said)"
     )
+    dictation_diff = _diff_summary(
+        content.listening_sentence, practice.dictation_text, "(no dictation)"
+    )
+    reading_diff = _diff_summary(
+        content.reading_text, practice.reading_transcript, "(no reading recording)"
+    )
     return (
         f"Previous learner memory: {memory or '(none yet)'}\n\n"
         f"Target word: {word.lemma} ({word.pos}). Vocabulary step: {vocabulary}.\n"
         f"Listening sentence: {content.listening_sentence}\n"
         f"Listening: {listening}.\n"
+        f"Dictation (wrote the listening sentence): {practice.dictation_text or '(none)'}\n"
+        f"Dictation diff: {dictation_diff}\n"
         f"Writing task: {content.writing_prompt}\n"
         f"Written answer: {practice.writing_text}\n"
         f"Reading text: {content.reading_text}\n"
         f"Reading transcript: {practice.reading_transcript or '(none)'}\n"
-        f"Reading diff: {_diff_summary(content, practice.reading_transcript)}\n"
+        f"Reading diff: {reading_diff}\n"
         f"Question to answer by speaking: {content.reading_question}\n"
         f"Free speaking transcript: {speaking}"
     )
