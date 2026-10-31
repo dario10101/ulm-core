@@ -1,6 +1,6 @@
 """Parametros del dominio de finanzas que administra cada usuario sobre sus
-propios datos: categorias de gasto, tags (compartidos por gastos e ingresos),
-fuentes y subcategorias de ingreso. Los abre el permiso `finances`, no el admin.
+propios datos: categorias de gasto, metodos de pago, tags (compartidos por
+gastos e ingresos), fuentes y subcategorias de ingreso. Los abre el permiso `finances`, no el admin.
 
 Borrado hibrido (ver catalog_rules.delete_or_archive): sin registros se borra,
 con registros se archiva. Un item archivado deja de ofrecerse en los
@@ -8,7 +8,7 @@ formularios pero los registros viejos lo siguen mostrando; se restaura
 mandando status=ENABLED en el update.
 """
 
-from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, Tag
+from app.db.models.finance import Category, IncomeSource, IncomeSubcategory, PaymentMethod, Tag
 from app.repositories.finance_catalog_repository import FinanceCatalogRepository
 from app.schemas.finance import (
     CatalogDeleteResult,
@@ -22,6 +22,8 @@ from app.schemas.finance import (
     IncomeSubcategoryAdminRead,
     IncomeSubcategoryRead,
     IncomeSubcategoryWrite,
+    PaymentMethodAdminRead,
+    PaymentMethodRead,
     TagAdminRead,
     TagRead,
     TagWrite,
@@ -96,6 +98,68 @@ class FinanceParamsService:
     def _category_read(category: Category, usage_count: int) -> CategoryAdminRead:
         return CategoryAdminRead(
             **CategoryRead.model_validate(category).model_dump(), usage_count=usage_count
+        )
+
+    # --- Metodos de pago (mismos campos y reglas que las categorias) ---
+
+    def list_payment_methods(self, *, user_id: int) -> list[PaymentMethodAdminRead]:
+        usage = self._repository.payment_method_usage(user_id)
+        return [
+            self._payment_method_read(p, usage.get(p.id, 0))
+            for p in self._repository.list_payment_methods(user_id)
+        ]
+
+    def create_payment_method(
+        self, *, user_id: int, payload: IconCatalogWrite
+    ) -> PaymentMethodAdminRead:
+        ensure_unique_name(payload.name, self._repository.list_payment_methods(user_id))
+        method = PaymentMethod(
+            user_id=user_id,
+            name=payload.name,
+            icon_key=payload.icon_key,
+            color_key=payload.color_key,
+            status=payload.status.value,
+        )
+        self._repository.add(method)
+        self._repository.flush()
+        return self._payment_method_read(method, 0)
+
+    def update_payment_method(
+        self, payment_method_id: int, *, user_id: int, payload: IconCatalogWrite
+    ) -> PaymentMethodAdminRead:
+        method = self._get_payment_method(user_id, payment_method_id)
+        ensure_unique_name(
+            payload.name, self._repository.list_payment_methods(user_id), exclude_id=method.id
+        )
+        method.name = payload.name
+        method.icon_key = payload.icon_key
+        method.color_key = payload.color_key
+        method.status = payload.status.value
+        self._repository.flush()
+        return self._payment_method_read(
+            method, self._repository.payment_method_usage(user_id).get(method.id, 0)
+        )
+
+    def delete_payment_method(self, payment_method_id: int, *, user_id: int) -> CatalogDeleteResult:
+        method = self._get_payment_method(user_id, payment_method_id)
+        result = delete_or_archive(
+            method,
+            usage_count=self._repository.payment_method_usage(user_id).get(method.id, 0),
+            delete=self._repository.delete,
+        )
+        self._repository.flush()
+        return result
+
+    def _get_payment_method(self, user_id: int, payment_method_id: int) -> PaymentMethod:
+        method = self._repository.get_payment_method(user_id, payment_method_id)
+        if method is None:
+            raise CatalogItemNotFoundError("Metodo de pago", payment_method_id)
+        return method
+
+    @staticmethod
+    def _payment_method_read(method: PaymentMethod, usage_count: int) -> PaymentMethodAdminRead:
+        return PaymentMethodAdminRead(
+            **PaymentMethodRead.model_validate(method).model_dump(), usage_count=usage_count
         )
 
     # --- Tags ---

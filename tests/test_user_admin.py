@@ -4,7 +4,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.db.models.finance import Category, DefaultExpenseCategory
+from app.db.models.finance import (
+    Category,
+    DefaultExpenseCategory,
+    DefaultIncomeSource,
+    DefaultIncomeSubcategory,
+    DefaultPaymentMethod,
+    IncomeSource,
+    IncomeSubcategory,
+    PaymentMethod,
+)
 from app.db.models.user import User, UserSession
 from app.repositories.sqlalchemy_finance_catalog_repository import (
     SqlAlchemyFinanceCatalogRepository,
@@ -56,6 +65,39 @@ def test_new_user_gets_a_copy_of_the_default_categories(service, db_session):
     assert [(c.name, c.icon_key, c.color_key, c.status) for c in copies] == [
         ("Food", "utensils", "yellow", "ENABLED"),
         ("Health", "heart-pulse", "red", "ENABLED"),
+    ]
+
+
+def test_new_user_gets_payment_methods_sources_and_subcategories(service, db_session):
+    db_session.add(DefaultPaymentMethod(name="Cash", icon_key="banknote", color_key="green"))
+    salary = DefaultIncomeSource(name="Salary", type="DIRECT")
+    savings = DefaultIncomeSource(name="Savings", type="INTEREST")
+    db_session.add_all([salary, savings])
+    db_session.flush()
+    db_session.add_all(
+        [
+            DefaultIncomeSubcategory(source_id=salary.id, name="BASE SALARY"),
+            DefaultIncomeSubcategory(source_id=salary.id, name="BONUS"),
+            DefaultIncomeSubcategory(source_id=savings.id, name="MAIN"),
+        ]
+    )
+    db_session.flush()
+
+    user = service.invite("ana@example.com")
+
+    methods = db_session.query(PaymentMethod).filter_by(user_id=user.id).all()
+    assert [(m.name, m.status) for m in methods] == [("Cash", "ENABLED")]
+    sources = {s.id: s for s in db_session.query(IncomeSource).filter_by(user_id=user.id)}
+    assert sorted((s.name, s.type) for s in sources.values()) == [
+        ("Salary", "DIRECT"),
+        ("Savings", "INTEREST"),
+    ]
+    # Cada subcategoria cuelga de la COPIA de su fuente, no de la plantilla.
+    subs = db_session.query(IncomeSubcategory).filter_by(user_id=user.id).all()
+    assert sorted((sources[s.source_id].name, s.name, s.type) for s in subs) == [
+        ("Salary", "BASE SALARY", "DIRECT"),
+        ("Salary", "BONUS", "DIRECT"),
+        ("Savings", "MAIN", "INTEREST"),
     ]
 
 

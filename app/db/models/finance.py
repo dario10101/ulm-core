@@ -1,14 +1,14 @@
 """Modelos ORM del modulo de finanzas: catalogos (categorias, metodos de
 pago, tags) y registros de gasto.
 
-Los metodos de pago son un catalogo global; categorias, tags, fuentes y
-subcategorias son por usuario. Todos tienen `status` (ENABLED/DISABLED): un
-item con registros no se borra, se archiva (DISABLED), para no perder la
-referencia historica; uno sin registros si se borra de verdad (ver
-FinanceParamsService / SystemParamsService).
+Categorias, metodos de pago, tags, fuentes y subcategorias son por usuario.
+Todos tienen `status` (ENABLED/DISABLED): un item con registros no se borra,
+se archiva (DISABLED), para no perder la referencia historica; uno sin
+registros si se borra de verdad (ver FinanceParamsService).
 
-Las categorias por defecto (DefaultExpenseCategory) son solo una plantilla:
-se copian a cada usuario al registrarse y nada las referencia despues.
+Las tablas `fn_default_*` (Default*) son solo plantillas que administra el
+admin (ver SystemParamsService): se copian a cada usuario al registrarse y
+nada las referencia despues, asi que no tienen `status` (borrar es borrar).
 """
 
 from datetime import UTC, date, datetime
@@ -21,10 +21,9 @@ from app.db.base_class import Base
 
 
 class DefaultExpenseCategory(Base):
-    """Plantilla de categorias para usuarios nuevos (la administra el admin).
-    Sin `status`: como ningun gasto la referencia, borrar es borrar."""
+    """Plantilla de categorias de gasto para usuarios nuevos."""
 
-    __tablename__ = "fn_default_expense_categories"
+    __tablename__ = "fn_default_expenses_categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -56,10 +55,28 @@ class Category(Base):
     )
 
 
-class PaymentMethod(Base):
-    __tablename__ = "fn_payment_methods"
+class DefaultPaymentMethod(Base):
+    """Plantilla de metodos de pago para usuarios nuevos."""
+
+    __tablename__ = "fn_default_payment_methods"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    icon_key: Mapped[str] = mapped_column(String(60), nullable=False)
+    color_key: Mapped[str] = mapped_column(String(30), nullable=False)
+
+
+class PaymentMethod(Base):
+    """Metodo de pago de un usuario (copiado de la plantilla al registrarse,
+    o creado por el desde "View records")."""
+
+    __tablename__ = "fn_user_payment_methods"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_fn_user_payment_methods_user_id_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     icon_key: Mapped[str] = mapped_column(String(60), nullable=False)
     color_key: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -94,7 +111,7 @@ class Expense(Base):
     recorded_on: Mapped[date] = mapped_column(Date, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_method_id: Mapped[int] = mapped_column(
-        ForeignKey("fn_payment_methods.id"), nullable=False
+        ForeignKey("fn_user_payment_methods.id"), nullable=False
     )
     category_id: Mapped[int] = mapped_column(
         ForeignKey("fn_user_expenses_categories.id"), nullable=False
@@ -128,6 +145,31 @@ class ExpenseTag(Base):
 # intereses es la conciliacion de un mes de un producto (saldos, aportes,
 # retiros). Fuentes y subcategorias son catalogos por usuario compartidos por
 # ambas, con `type` indicando a cual aplican (DIRECT / INTEREST / ALL).
+
+
+class DefaultIncomeSource(Base):
+    """Plantilla de fuentes de ingreso para usuarios nuevos."""
+
+    __tablename__ = "fn_default_sources"
+    __table_args__ = (UniqueConstraint("name", name="uq_fn_default_sources_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class DefaultIncomeSubcategory(Base):
+    """Plantilla de subcategorias: cada una de una fuente de la plantilla.
+    Sin `type` (en fn_user_subcategories es redundante con la fuente)."""
+
+    __tablename__ = "fn_default_subcategories"
+    __table_args__ = (
+        UniqueConstraint("source_id", "name", name="uq_fn_default_subcategories_source_id_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("fn_default_sources.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class IncomeSource(Base):

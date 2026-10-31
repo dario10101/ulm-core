@@ -18,7 +18,7 @@ class FinanceCatalogService:
             ],
             payment_methods=[
                 PaymentMethodRead.model_validate(p)
-                for p in self._repository.list_enabled_payment_methods()
+                for p in self._repository.list_enabled_payment_methods(user_id)
             ],
             tags=[TagRead.model_validate(t) for t in self._repository.list_enabled_tags(user_id)],
         )

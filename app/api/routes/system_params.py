@@ -1,7 +1,7 @@
-"""Parametros globales del sistema (Settings -> System): plantilla de
-categorias de gasto para usuarios nuevos, metodos de pago, festivos/fechas
-especiales y datos de acceso. Solo el admin (ver PRIVATE_ROUTERS en
-app/main.py)."""
+"""Parametros globales del sistema (Settings -> System): plantillas para
+usuarios nuevos (categorias de gasto, metodos de pago, fuentes y
+subcategorias de ingreso), festivos/fechas especiales y datos de acceso.
+Solo el admin (ver PRIVATE_ROUTERS en app/main.py)."""
 
 from urllib.parse import urlencode
 
@@ -18,10 +18,12 @@ from app.schemas.calendar_event import (
 )
 from app.schemas.finance import (
     CatalogDeleteRead,
-    DefaultCategoryRead,
-    DefaultCategoryWrite,
-    IconCatalogWrite,
-    PaymentMethodAdminRead,
+    DefaultIconCatalogRead,
+    DefaultIconCatalogWrite,
+    DefaultIncomeSourceRead,
+    DefaultIncomeSourceWrite,
+    DefaultIncomeSubcategoryRead,
+    DefaultIncomeSubcategoryWrite,
 )
 from app.schemas.user import AccessInfoRead
 from app.services.calendar_admin_service import CalendarAdminService
@@ -41,36 +43,38 @@ def get_access_info() -> AccessInfoRead:
     return AccessInfoRead(registration_mode=settings.registration_mode, google_audience_url=url)
 
 
-# --- Plantilla de categorias de gasto (para usuarios nuevos) ---
+# --- Plantillas para usuarios nuevos ---
 #
-# DELETE siempre responde DELETED (nada referencia la plantilla); conserva la
+# DELETE siempre responde DELETED (nada referencia una plantilla); conserva la
 # forma de los demas catalogos para que el cliente los trate igual.
+#
+# --- Plantilla de categorias de gasto ---
 
 
-@router.get("/expense-categories", response_model=list[DefaultCategoryRead])
+@router.get("/expense-categories", response_model=list[DefaultIconCatalogRead])
 def list_default_expense_categories(
     service: SystemParamsService = Depends(get_system_params_service),
-) -> list[DefaultCategoryRead]:
+) -> list[DefaultIconCatalogRead]:
     return service.list_default_categories()
 
 
-@router.post("/expense-categories", response_model=DefaultCategoryRead, status_code=201)
+@router.post("/expense-categories", response_model=DefaultIconCatalogRead, status_code=201)
 def create_default_expense_category(
-    payload: DefaultCategoryWrite,
+    payload: DefaultIconCatalogWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> DefaultCategoryRead:
+) -> DefaultIconCatalogRead:
     try:
         return service.create_default_category(payload)
     except DomainError as exc:
         raise http_error(exc)
 
 
-@router.put("/expense-categories/{category_id}", response_model=DefaultCategoryRead)
+@router.put("/expense-categories/{category_id}", response_model=DefaultIconCatalogRead)
 def update_default_expense_category(
     category_id: int,
-    payload: DefaultCategoryWrite,
+    payload: DefaultIconCatalogWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> DefaultCategoryRead:
+) -> DefaultIconCatalogRead:
     try:
         return service.update_default_category(category_id, payload)
     except DomainError as exc:
@@ -88,46 +92,134 @@ def delete_default_expense_category(
         raise http_error(exc)
 
 
-# --- Metodos de pago ---
+# --- Plantilla de metodos de pago ---
 
 
-@router.get("/payment-methods", response_model=list[PaymentMethodAdminRead])
-def list_payment_methods(
+@router.get("/payment-methods", response_model=list[DefaultIconCatalogRead])
+def list_default_payment_methods(
     service: SystemParamsService = Depends(get_system_params_service),
-) -> list[PaymentMethodAdminRead]:
-    return service.list_payment_methods()
+) -> list[DefaultIconCatalogRead]:
+    return service.list_default_payment_methods()
 
 
-@router.post("/payment-methods", response_model=PaymentMethodAdminRead, status_code=201)
-def create_payment_method(
-    payload: IconCatalogWrite,
+@router.post("/payment-methods", response_model=DefaultIconCatalogRead, status_code=201)
+def create_default_payment_method(
+    payload: DefaultIconCatalogWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> PaymentMethodAdminRead:
+) -> DefaultIconCatalogRead:
     try:
-        return service.create_payment_method(payload)
+        return service.create_default_payment_method(payload)
     except DomainError as exc:
         raise http_error(exc)
 
 
-@router.put("/payment-methods/{payment_method_id}", response_model=PaymentMethodAdminRead)
-def update_payment_method(
+@router.put("/payment-methods/{payment_method_id}", response_model=DefaultIconCatalogRead)
+def update_default_payment_method(
     payment_method_id: int,
-    payload: IconCatalogWrite,
+    payload: DefaultIconCatalogWrite,
     service: SystemParamsService = Depends(get_system_params_service),
-) -> PaymentMethodAdminRead:
+) -> DefaultIconCatalogRead:
     try:
-        return service.update_payment_method(payment_method_id, payload)
+        return service.update_default_payment_method(payment_method_id, payload)
     except DomainError as exc:
         raise http_error(exc)
 
 
 @router.delete("/payment-methods/{payment_method_id}", response_model=CatalogDeleteRead)
-def delete_payment_method(
+def delete_default_payment_method(
     payment_method_id: int,
     service: SystemParamsService = Depends(get_system_params_service),
 ) -> CatalogDeleteRead:
     try:
-        return CatalogDeleteRead(result=service.delete_payment_method(payment_method_id))
+        return CatalogDeleteRead(result=service.delete_default_payment_method(payment_method_id))
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+# --- Plantilla de fuentes de ingreso (borrar una borra sus subcategorias) ---
+
+
+@router.get("/income-sources", response_model=list[DefaultIncomeSourceRead])
+def list_default_income_sources(
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> list[DefaultIncomeSourceRead]:
+    return service.list_default_sources()
+
+
+@router.post("/income-sources", response_model=DefaultIncomeSourceRead, status_code=201)
+def create_default_income_source(
+    payload: DefaultIncomeSourceWrite,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> DefaultIncomeSourceRead:
+    try:
+        return service.create_default_source(payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.put("/income-sources/{source_id}", response_model=DefaultIncomeSourceRead)
+def update_default_income_source(
+    source_id: int,
+    payload: DefaultIncomeSourceWrite,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> DefaultIncomeSourceRead:
+    try:
+        return service.update_default_source(source_id, payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.delete("/income-sources/{source_id}", response_model=CatalogDeleteRead)
+def delete_default_income_source(
+    source_id: int,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> CatalogDeleteRead:
+    try:
+        return CatalogDeleteRead(result=service.delete_default_source(source_id))
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+# --- Plantilla de subcategorias de ingreso ---
+
+
+@router.get("/income-subcategories", response_model=list[DefaultIncomeSubcategoryRead])
+def list_default_income_subcategories(
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> list[DefaultIncomeSubcategoryRead]:
+    return service.list_default_subcategories()
+
+
+@router.post("/income-subcategories", response_model=DefaultIncomeSubcategoryRead, status_code=201)
+def create_default_income_subcategory(
+    payload: DefaultIncomeSubcategoryWrite,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> DefaultIncomeSubcategoryRead:
+    try:
+        return service.create_default_subcategory(payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.put("/income-subcategories/{subcategory_id}", response_model=DefaultIncomeSubcategoryRead)
+def update_default_income_subcategory(
+    subcategory_id: int,
+    payload: DefaultIncomeSubcategoryWrite,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> DefaultIncomeSubcategoryRead:
+    try:
+        return service.update_default_subcategory(subcategory_id, payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.delete("/income-subcategories/{subcategory_id}", response_model=CatalogDeleteRead)
+def delete_default_income_subcategory(
+    subcategory_id: int,
+    service: SystemParamsService = Depends(get_system_params_service),
+) -> CatalogDeleteRead:
+    try:
+        return CatalogDeleteRead(result=service.delete_default_subcategory(subcategory_id))
     except DomainError as exc:
         raise http_error(exc)
 

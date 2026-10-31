@@ -1,5 +1,6 @@
 """Parametros del dominio de finanzas que cada usuario administra sobre sus
-datos: categorias de gasto, tags, fuentes y subcategorias de ingreso ("View records" -> Manage).
+datos: categorias de gasto, metodos de pago, tags, fuentes y subcategorias de
+ingreso ("View records" -> Manage).
 Exige el permiso `finances` (ver PRIVATE_ROUTERS en app/main.py).
 
 DELETE responde 200 con el resultado y no 204: el cliente necesita saber si
@@ -17,6 +18,7 @@ from app.schemas.finance import (
     IncomeSourceWrite,
     IncomeSubcategoryAdminRead,
     IncomeSubcategoryWrite,
+    PaymentMethodAdminRead,
     TagAdminRead,
     TagWrite,
 )
@@ -70,6 +72,56 @@ def delete_expense_category(
 ) -> CatalogDeleteRead:
     try:
         return CatalogDeleteRead(result=service.delete_category(category_id, user_id=user_id))
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+# --- Metodos de pago ---
+
+
+@router.get("/payment-methods", response_model=list[PaymentMethodAdminRead])
+def list_payment_methods(
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> list[PaymentMethodAdminRead]:
+    return service.list_payment_methods(user_id=user_id)
+
+
+@router.post("/payment-methods", response_model=PaymentMethodAdminRead, status_code=201)
+def create_payment_method(
+    payload: IconCatalogWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> PaymentMethodAdminRead:
+    try:
+        return service.create_payment_method(user_id=user_id, payload=payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.put("/payment-methods/{payment_method_id}", response_model=PaymentMethodAdminRead)
+def update_payment_method(
+    payment_method_id: int,
+    payload: IconCatalogWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> PaymentMethodAdminRead:
+    try:
+        return service.update_payment_method(payment_method_id, user_id=user_id, payload=payload)
+    except DomainError as exc:
+        raise http_error(exc)
+
+
+@router.delete("/payment-methods/{payment_method_id}", response_model=CatalogDeleteRead)
+def delete_payment_method(
+    payment_method_id: int,
+    user_id: int = Depends(get_current_user_id),
+    service: FinanceParamsService = Depends(get_finance_params_service),
+) -> CatalogDeleteRead:
+    try:
+        return CatalogDeleteRead(
+            result=service.delete_payment_method(payment_method_id, user_id=user_id)
+        )
     except DomainError as exc:
         raise http_error(exc)
 

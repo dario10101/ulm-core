@@ -1,5 +1,6 @@
-"""Parametros globales del sistema (/system/*, solo admin): plantilla de
-categorias de gasto, metodos de pago y eventos generales del calendario (festivos)."""
+"""Parametros globales del sistema (/system/*, solo admin): plantillas para
+usuarios nuevos (categorias de gasto, metodos de pago, fuentes y subcategorias
+de ingreso) y eventos generales del calendario (festivos)."""
 
 from datetime import date
 
@@ -97,36 +98,42 @@ def test_default_category_delete_is_always_real_and_keeps_users_copies(db_sessio
     ]
 
 
-def test_payment_method_used_by_any_user_is_archived(db_session, other_user):
-    category = Category(
-        user_id=other_user, name="Groceries", icon_key="shopping-cart", color_key="lime"
+def test_default_income_source_crud_and_delete_takes_its_subcategories(db_session):
+    source = client.post(f"{API}/income-sources", json={"name": "Salary", "type": "DIRECT"}).json()
+    assert source["subcategory_count"] == 0
+    assert "status" not in source and "usage_count" not in source
+    assert (
+        client.post(f"{API}/income-sources", json={"name": "SALARY", "type": "ALL"}).status_code
+        == 409
     )
-    method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
-    db_session.add_all([category, method])
-    db_session.flush()
-    # El gasto es de OTRO usuario: igual cuenta, el metodo de pago es global.
-    db_session.add(
-        Expense(
-            user_id=other_user,
-            name="Mercado",
-            amount=1000,
-            recorded_on=date(2026, 9, 1),
-            category_id=category.id,
-            payment_method_id=method.id,
-        )
-    )
-    db_session.commit()
 
-    assert client.get(f"{API}/payment-methods").json()[0]["usage_count"] == 1
-    assert client.delete(f"{API}/payment-methods/{method.id}").json() == {"result": "ARCHIVED"}
-    assert client.get("/api/v1/expenses/options").json()["payment_methods"] == []
+    sub = {"name": "BONUS", "source_id": source["id"]}
+    created = client.post(f"{API}/income-subcategories", json=sub)
+    assert created.status_code == 201
+    assert client.post(f"{API}/income-subcategories", json=sub).status_code == 409
+    assert client.get(f"{API}/income-sources").json()[0]["subcategory_count"] == 1
+
+    updated = client.put(
+        f"{API}/income-sources/{source['id']}", json={"name": "Salary", "type": "ALL"}
+    )
+    assert updated.json()["type"] == "ALL"
+
+    assert client.delete(f"{API}/income-sources/{source['id']}").json() == {"result": "DELETED"}
+    assert client.get(f"{API}/income-sources").json() == []
+    assert client.get(f"{API}/income-subcategories").json() == []
+
+
+def test_default_subcategory_needs_an_existing_default_source():
+    response = client.post(f"{API}/income-subcategories", json={"name": "X", "source_id": 999})
+
+    assert response.status_code == 404
 
 
 def test_archived_category_rejects_new_expenses(db_session):
     category = Category(
         user_id=1, name="Old", icon_key="package", color_key="slate", status="DISABLED"
     )
-    method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
+    method = PaymentMethod(user_id=1, name="Cash", icon_key="banknote", color_key="green")
     db_session.add_all([category, method])
     db_session.commit()
 

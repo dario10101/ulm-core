@@ -61,7 +61,8 @@ class CatalogDeleteRead(BaseModel):
 
 
 class TagWrite(BaseModel):
-    name: Annotated[CatalogName, Field(max_length=60)]
+    # En mayusculas siempre, como el nombre de un gasto.
+    name: Annotated[CatalogName, StringConstraints(max_length=60, to_upper=True)]
     color_key: str = Field(min_length=1, max_length=30)
     # Mandar ENABLED a un item archivado lo restaura.
     status: CatalogStatus = CatalogStatus.ENABLED
@@ -88,16 +89,16 @@ class PaymentMethodAdminRead(PaymentMethodRead):
     usage_count: int
 
 
-class DefaultCategoryWrite(BaseModel):
-    """Categoria de la plantilla para usuarios nuevos: sin status, porque
-    no se archiva (ningun gasto la referencia)."""
+class DefaultIconCatalogWrite(BaseModel):
+    """Categoria o metodo de pago de la plantilla para usuarios nuevos: sin
+    status, porque no se archiva (ningun registro la referencia)."""
 
     name: Annotated[CatalogName, Field(max_length=120)]
     icon_key: str = Field(min_length=1, max_length=60)
     color_key: str = Field(min_length=1, max_length=30)
 
 
-class DefaultCategoryRead(DefaultCategoryWrite):
+class DefaultIconCatalogRead(DefaultIconCatalogWrite):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -249,6 +250,29 @@ class IncomeSubcategoryWrite(BaseModel):
 
 class IncomeSubcategoryAdminRead(IncomeSubcategoryRead):
     usage_count: int
+
+
+class DefaultIncomeSourceWrite(BaseModel):
+    """Fuente de la plantilla para usuarios nuevos (sin status: no se archiva)."""
+
+    name: Annotated[CatalogName, Field(max_length=120)]
+    type: IncomeKind
+
+
+class DefaultIncomeSourceRead(DefaultIncomeSourceWrite):
+    id: int
+    subcategory_count: int
+
+
+class DefaultIncomeSubcategoryWrite(BaseModel):
+    name: Annotated[CatalogName, Field(max_length=120)]
+    source_id: int
+
+
+class DefaultIncomeSubcategoryRead(DefaultIncomeSubcategoryWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
 
 
 class InterestEndBalance(BaseModel):

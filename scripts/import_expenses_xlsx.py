@@ -18,7 +18,7 @@ sin insertar nada. Para no duplicar, se niega a correr si el usuario ya tiene
 gastos en el rango de fechas de los archivos (--force lo salta).
 
 El usuario tiene que existir antes (al registrarse recibe la copia de la
-plantilla de categorias; ver UserAdminService.register).
+plantilla de categorias y metodos de pago; ver UserAdminService.register).
 
 Uso (desde ulm-core/, con el venv activado y openpyxl de requirements-dev.txt):
     python -m scripts.import_expenses_xlsx ../ulm-data/expenses/*.xlsx \
@@ -46,7 +46,8 @@ from app.db.session import SessionLocal
 SHEET = "Expenses"
 EXPECTED_HEADER = ("Date and time", "Category", "Account", "Amount in default currency")
 
-# Cuenta de la app anterior -> nombre del metodo de pago en fn_payment_methods.
+# Cuenta de la app anterior -> nombre del metodo de pago del usuario
+# (fn_user_payment_methods).
 ACCOUNT_TO_PAYMENT_METHOD = {
     "Cash": "Cash",
     "Credit cards": "Credit card",
@@ -115,7 +116,10 @@ def main() -> None:
         categories = {
             c.name: c.id for c in db.scalars(select(Category).where(Category.user_id == user.id))
         }
-        payment_methods = {p.name: p.id for p in db.scalars(select(PaymentMethod))}
+        payment_methods = {
+            p.name: p.id
+            for p in db.scalars(select(PaymentMethod).where(PaymentMethod.user_id == user.id))
+        }
 
         # Validacion completa antes de escribir nada.
         errors = []

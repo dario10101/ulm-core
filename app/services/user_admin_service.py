@@ -86,7 +86,7 @@ class UserAdminService:
         self._users.add(user)
         self._users.flush()
         # Misma transaccion que el alta: no queda un usuario sin categorias.
-        self._finance_catalog.copy_default_categories(user.id)
+        self._finance_catalog.copy_defaults(user.id)
         self._finance_catalog.flush()
         return user
 

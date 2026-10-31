@@ -19,7 +19,9 @@ def _seed_catalog(db_session, *, user_id: int = 1) -> tuple[int, int, int]:
     category = Category(
         user_id=user_id, name="Groceries", icon_key="shopping-cart", color_key="lime"
     )
-    payment_method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
+    payment_method = PaymentMethod(
+        user_id=user_id, name="Cash", icon_key="banknote", color_key="green"
+    )
     tag = Tag(user_id=user_id, name="NEEDED", color_key="emerald")
     db_session.add_all([category, payment_method, tag])
     db_session.commit()
@@ -292,7 +294,9 @@ def test_delete_of_another_users_expense_returns_404(db_session):
 def test_list_expenses_filters_by_category_payment_method_tag_and_amount_range(db_session):
     category_id, payment_method_id, tag_id = _seed_catalog(db_session)
     other_category = Category(user_id=1, name="Fuel", icon_key="fuel", color_key="orange")
-    other_payment_method = PaymentMethod(name="PSE", icon_key="landmark", color_key="indigo")
+    other_payment_method = PaymentMethod(
+        user_id=1, name="PSE", icon_key="landmark", color_key="indigo"
+    )
     other_tag = Tag(user_id=1, name="WANTED", color_key="amber")
     db_session.add_all([other_category, other_payment_method, other_tag])
     db_session.commit()

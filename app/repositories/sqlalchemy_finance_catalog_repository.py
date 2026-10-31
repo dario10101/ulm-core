@@ -9,6 +9,9 @@ from app.db.base_class import Base
 from app.db.models.finance import (
     Category,
     DefaultExpenseCategory,
+    DefaultIncomeSource,
+    DefaultIncomeSubcategory,
+    DefaultPaymentMethod,
     DirectIncome,
     DirectIncomeTag,
     Expense,
@@ -38,11 +41,14 @@ class SqlAlchemyFinanceCatalogRepository:
             .all()
         )
 
-    def list_enabled_payment_methods(self) -> Sequence[PaymentMethod]:
+    def list_enabled_payment_methods(self, user_id: int) -> Sequence[PaymentMethod]:
         return (
             self._db.execute(
                 select(PaymentMethod)
-                .where(PaymentMethod.status == CatalogStatus.ENABLED.value)
+                .where(
+                    PaymentMethod.user_id == user_id,
+                    PaymentMethod.status == CatalogStatus.ENABLED.value,
+                )
                 .order_by(PaymentMethod.name)
             )
             .scalars()
@@ -64,8 +70,9 @@ class SqlAlchemyFinanceCatalogRepository:
         category = self._db.get(Category, category_id)
         return category if category is not None and category.user_id == user_id else None
 
-    def get_payment_method(self, payment_method_id: int) -> PaymentMethod | None:
-        return self._db.get(PaymentMethod, payment_method_id)
+    def get_payment_method(self, user_id: int, payment_method_id: int) -> PaymentMethod | None:
+        method = self._db.get(PaymentMethod, payment_method_id)
+        return method if method is not None and method.user_id == user_id else None
 
     def list_tags_by_ids(self, user_id: int, tag_ids: Sequence[int]) -> Sequence[Tag]:
         if not tag_ids:
@@ -129,7 +136,39 @@ class SqlAlchemyFinanceCatalogRepository:
     def get_default_category(self, category_id: int) -> DefaultExpenseCategory | None:
         return self._db.get(DefaultExpenseCategory, category_id)
 
-    def copy_default_categories(self, user_id: int) -> None:
+    def list_default_payment_methods(self) -> Sequence[DefaultPaymentMethod]:
+        return (
+            self._db.execute(select(DefaultPaymentMethod).order_by(DefaultPaymentMethod.name))
+            .scalars()
+            .all()
+        )
+
+    def get_default_payment_method(self, payment_method_id: int) -> DefaultPaymentMethod | None:
+        return self._db.get(DefaultPaymentMethod, payment_method_id)
+
+    def list_default_sources(self) -> Sequence[DefaultIncomeSource]:
+        return (
+            self._db.execute(select(DefaultIncomeSource).order_by(DefaultIncomeSource.id))
+            .scalars()
+            .all()
+        )
+
+    def get_default_source(self, source_id: int) -> DefaultIncomeSource | None:
+        return self._db.get(DefaultIncomeSource, source_id)
+
+    def list_default_subcategories(self) -> Sequence[DefaultIncomeSubcategory]:
+        # Por id, como las del usuario: la primera de una fuente es el default
+        # del formulario.
+        return (
+            self._db.execute(select(DefaultIncomeSubcategory).order_by(DefaultIncomeSubcategory.id))
+            .scalars()
+            .all()
+        )
+
+    def get_default_subcategory(self, subcategory_id: int) -> DefaultIncomeSubcategory | None:
+        return self._db.get(DefaultIncomeSubcategory, subcategory_id)
+
+    def copy_defaults(self, user_id: int) -> None:
         self._db.add_all(
             Category(
                 user_id=user_id,
@@ -139,9 +178,43 @@ class SqlAlchemyFinanceCatalogRepository:
             )
             for default in self.list_default_categories()
         )
+        self._db.add_all(
+            PaymentMethod(
+                user_id=user_id,
+                name=default.name,
+                icon_key=default.icon_key,
+                color_key=default.color_key,
+            )
+            for default in self.list_default_payment_methods()
+        )
+        # Las subcategorias necesitan el id de la fuente copiada: primero las
+        # fuentes, flush, y despues cada subcategoria con su fuente nueva.
+        sources = {
+            default.id: IncomeSource(user_id=user_id, type=default.type, name=default.name)
+            for default in self.list_default_sources()
+        }
+        self._db.add_all(sources.values())
+        self._db.flush()
+        self._db.add_all(
+            IncomeSubcategory(
+                user_id=user_id,
+                source_id=sources[default.source_id].id,
+                type=sources[default.source_id].type,
+                name=default.name,
+            )
+            for default in self.list_default_subcategories()
+        )
 
-    def list_all_payment_methods(self) -> Sequence[PaymentMethod]:
-        return self._db.execute(select(PaymentMethod).order_by(PaymentMethod.name)).scalars().all()
+    def list_payment_methods(self, user_id: int) -> Sequence[PaymentMethod]:
+        return (
+            self._db.execute(
+                select(PaymentMethod)
+                .where(PaymentMethod.user_id == user_id)
+                .order_by(PaymentMethod.name)
+            )
+            .scalars()
+            .all()
+        )
 
     def list_tags(self, user_id: int) -> Sequence[Tag]:
         return (
@@ -161,8 +234,8 @@ class SqlAlchemyFinanceCatalogRepository:
     def category_usage(self, user_id: int) -> dict[int, int]:
         return self._count_by(Expense.category_id, Expense.user_id == user_id)
 
-    def payment_method_usage(self) -> dict[int, int]:
-        return self._count_by(Expense.payment_method_id)
+    def payment_method_usage(self, user_id: int) -> dict[int, int]:
+        return self._count_by(Expense.payment_method_id, Expense.user_id == user_id)
 
     def tag_usage(self, user_id: int) -> dict[int, int]:
         usage: dict[int, int] = {}

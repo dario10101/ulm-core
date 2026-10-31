@@ -53,7 +53,7 @@ def _expense_with_tag(db_session, tag: Tag) -> None:
     category = Category(
         user_id=tag.user_id, name="Groceries", icon_key="shopping-cart", color_key="lime"
     )
-    method = PaymentMethod(name="Cash", icon_key="banknote", color_key="green")
+    method = PaymentMethod(user_id=tag.user_id, name="Cash", icon_key="banknote", color_key="green")
     db_session.add_all([category, method])
     db_session.flush()
     db_session.add(
@@ -140,6 +140,44 @@ def test_another_users_category_is_invisible_and_untouchable(db_session, other_u
         assert [c["name"] for c in client.get(f"{API}/expense-categories").json()] == ["Pets"]
 
 
+# --- Metodos de pago (mismas reglas que las categorias) ---
+
+
+def test_payment_method_crud_and_hybrid_delete(db_session):
+    payload = {"name": "Nequi", "icon_key": "smartphone", "color_key": "violet"}
+    created = client.post(f"{API}/payment-methods", json=payload)
+    assert created.status_code == 201
+    method_id = created.json()["id"]
+    assert (
+        client.post(f"{API}/payment-methods", json={**payload, "name": "NEQUI"}).status_code == 409
+    )
+    options = client.get("/api/v1/expenses/options").json()["payment_methods"]
+    assert [p["name"] for p in options] == ["Nequi"]
+    assert client.delete(f"{API}/payment-methods/{method_id}").json() == {"result": "DELETED"}
+
+    # Uno con gastos se archiva y sale de las opciones del formulario.
+    tag = Tag(user_id=1, name="NEEDED", color_key="emerald")
+    db_session.add(tag)
+    db_session.flush()
+    _expense_with_tag(db_session, tag)
+    [used] = client.get(f"{API}/payment-methods").json()
+    assert used["usage_count"] == 1
+    assert client.delete(f"{API}/payment-methods/{used['id']}").json() == {"result": "ARCHIVED"}
+    assert client.get("/api/v1/expenses/options").json()["payment_methods"] == []
+
+
+def test_another_users_payment_method_is_invisible_and_untouchable(db_session, other_user):
+    payload = {"name": "Nequi", "icon_key": "smartphone", "color_key": "violet"}
+    foreign = PaymentMethod(user_id=other_user, **payload)
+    db_session.add(foreign)
+    db_session.commit()
+
+    assert client.get(f"{API}/payment-methods").json() == []
+    assert client.put(f"{API}/payment-methods/{foreign.id}", json=payload).status_code == 404
+    assert client.delete(f"{API}/payment-methods/{foreign.id}").status_code == 404
+    assert client.post(f"{API}/payment-methods", json=payload).status_code == 201
+
+
 # --- Tags ---
 
 
@@ -160,6 +198,16 @@ def test_tag_crud_with_usage_count(db_session):
     assert updated.status_code == 200
     assert updated.json()["color_key"] == "teal"
     assert updated.json()["usage_count"] == 1
+
+
+def test_tag_name_is_stored_in_uppercase(db_session):
+    created = client.post(f"{API}/tags", json={"name": " viaje ", "color_key": "sky"}).json()
+    assert created["name"] == "VIAJE"
+
+    updated = client.put(
+        f"{API}/tags/{created['id']}", json={"name": "Viaje corto", "color_key": "sky"}
+    )
+    assert updated.json()["name"] == "VIAJE CORTO"
 
 
 def test_tag_names_are_unique_ignoring_case_and_counting_archived(db_session):
