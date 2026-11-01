@@ -1,4 +1,5 @@
-# Imagen de produccion de ulm-core (Cloud Run). Ver ulm-doc/plans/PLAN-DOCKER.md.
+# Imagen de produccion de ulm-core (Cloud Run). Reglas en
+# ulm-doc/technical/technical-design.md (Deploy -> Contenedores).
 #
 # La misma imagen corre la API (CMD por defecto) y las migraciones
 # (`alembic upgrade head`, como paso aparte antes de desplegar): no migra al

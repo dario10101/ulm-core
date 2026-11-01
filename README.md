@@ -145,7 +145,7 @@ docker run --rm -e DATABASE_URL=... ulm-core:local alembic upgrade head
 docker run --rm -p 8000:8000 --env-file .env -e DATABASE_URL=... ulm-core:local
 ```
 
-Para probarla con Postgres sin armar los comandos: `docker-compose.yml` de `ulm-infra`. El CI (job `docker`) la construye, migra una base vacia y hace smoke test a `/api/v1/health`.
+Para probarla con Postgres sin armar los comandos: `ulm-infra/local/docker-compose.yml`. El CI (job `docker`) la construye, migra una base vacia y hace smoke test a `/api/v1/health`.
 
 ## Correr pruebas
 

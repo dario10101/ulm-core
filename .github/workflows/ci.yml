@@ -74,7 +74,7 @@ jobs:
       - name: Upgrade despues del downgrade
         run: alembic upgrade head
 
-  # La imagen de produccion (Dockerfile, ver PLAN-DOCKER.md): que construya,
+  # La imagen de produccion (Dockerfile): que construya,
   # que migre una base vacia y que la API arranque. --network host: el
   # contenedor ve el Postgres del service en localhost. Sin push todavia.
   docker:
