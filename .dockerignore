@@ -1,0 +1,17 @@
+# Solo entra a la imagen lo que copia el Dockerfile; esto achica el contexto
+# de build y evita que un .env local termine adentro.
+.git/
+.github/
+.vscode/
+.idea/
+venv/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+.env.*
+tests/
+doc/

@@ -73,3 +73,41 @@ jobs:
         run: alembic downgrade base
       - name: Upgrade despues del downgrade
         run: alembic upgrade head
+
+  # La imagen de produccion (Dockerfile, ver PLAN-DOCKER.md): que construya,
+  # que migre una base vacia y que la API arranque. --network host: el
+  # contenedor ve el Postgres del service en localhost. Sin push todavia.
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ulm_user
+          POSTGRES_PASSWORD: ulm_password
+          POSTGRES_DB: ulm_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://ulm_user:ulm_password@localhost:5432/ulm_db
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t ulm-core:ci .
+      - name: No corre como root
+        run: test "$(docker run --rm ulm-core:ci whoami)" = "ulm"
+      - name: Migraciones con la imagen
+        run: docker run --rm --network host -e DATABASE_URL ulm-core:ci alembic upgrade head
+      - name: Smoke test de la API
+        run: |
+          docker run -d --name api --network host -e DATABASE_URL ulm-core:ci
+          for i in $(seq 1 15); do
+            curl -fsS http://localhost:8000/api/v1/health && exit 0
+            sleep 2
+          done
+          docker logs api
+          exit 1

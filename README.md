@@ -126,13 +126,26 @@ doc/            # Coleccion de Postman
    ```
    pip install -r requirements.txt
    ```
-3. Levantar Postgres local en Docker: ver [ulm-repository/postgres-local-setup.md](../ulm-repository/postgres-local-setup.md).
-4. Levantar el servidor de desarrollo:
+3. Levantar Postgres local en Docker: ver [ulm-repository/how-to/postgres-local-setup.md](../ulm-repository/how-to/postgres-local-setup.md).
+4. Aplicar las migraciones y levantar el servidor de desarrollo:
    ```
+   alembic upgrade head
    uvicorn app.main:app --reload
    ```
-   Las tablas se crean automaticamente al iniciar (`Base.metadata.create_all`); si Postgres no esta corriendo, la app arranca igual pero los endpoints de `dummy` fallaran. **Ojo**: `create_all` solo crea tablas que no existen, no agrega columnas nuevas a una tabla ya creada (no hay Alembic en este proyecto). Si se agrega un campo a un modelo existente, hay que correr el `ALTER TABLE` a mano contra la base local.
+   El esquema lo maneja Alembic; la app no crea tablas al arrancar. Ver [ulm-repository/how-to/alembic.md](../ulm-repository/how-to/alembic.md).
 5. Abrir la documentacion interactiva en `http://127.0.0.1:8000/docs`
+
+## Imagen Docker
+
+`Dockerfile` arma la imagen de produccion (Cloud Run): solo `requirements.txt`, usuario no root, puerto de `$PORT`. No migra al arrancar: las migraciones son un paso aparte con la misma imagen.
+
+```
+docker build -t ulm-core:local .
+docker run --rm -e DATABASE_URL=... ulm-core:local alembic upgrade head
+docker run --rm -p 8000:8000 --env-file .env -e DATABASE_URL=... ulm-core:local
+```
+
+Para probarla con Postgres sin armar los comandos: `docker-compose.yml` de `ulm-infra`. El CI (job `docker`) la construye, migra una base vacia y hace smoke test a `/api/v1/health`.
 
 ## Correr pruebas
 
