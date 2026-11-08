@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
-engine = create_engine(settings.database_url)
+# pool_pre_ping: antes de entregar una conexion del pool la prueba con un
+# SELECT 1 y, si murio, abre otra. En prod Neon se suspende tras 5 min sin uso
+# y corta las conexiones abiertas; sin esto, el primer request despues de la
+# pausa tomaria una conexion muerta y responderia 500.
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 
 # expire_on_commit=False: al commitear, SQLAlchemy por defecto marca como
 # expirados los atributos de todos los objetos de la sesion, y volver a leerlos

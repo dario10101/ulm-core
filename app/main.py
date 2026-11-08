@@ -60,7 +60,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+# En produccion sin /docs, /redoc ni /openapi.json: no exponen datos, pero le
+# dan a cualquiera el mapa completo de la API.
+_api_docs = settings.environment != "production"
+
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url="/docs" if _api_docs else None,
+    redoc_url="/redoc" if _api_docs else None,
+    openapi_url="/openapi.json" if _api_docs else None,
+)
 
 app.add_middleware(
     CORSMiddleware,
