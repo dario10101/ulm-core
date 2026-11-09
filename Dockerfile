@@ -33,6 +33,12 @@ COPY app ./app
 
 USER ulm
 
+# Version que muestra /health (settings.app_version). El CI pasa el SHA del
+# commit con --build-arg; un build local queda "dev". Va al final para no
+# invalidar el cache de las capas de arriba en cada commit.
+ARG GIT_SHA=dev
+ENV APP_VERSION=$GIT_SHA
+
 EXPOSE 8000
 
 # PORT lo inyecta Cloud Run. --proxy-headers: TLS termina adelante, en el

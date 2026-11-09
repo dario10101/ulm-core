@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     # Nombre del proyecto, expuesto en el endpoint de salud
     app_name: str = "ULM Core"
     environment: str = "development"
+    # SHA del commit, grabado en la imagen por el CI (Dockerfile, ARG GIT_SHA).
+    # El smoke test del deploy lo busca en /health para confirmar que responde
+    # la revision nueva. En local queda "dev".
+    app_version: str = "dev"
     api_prefix: str = "/api/v1"
     # DEBUG, INFO, WARNING, ERROR. Ver app/core/logging.py.
     log_level: str = "INFO"
