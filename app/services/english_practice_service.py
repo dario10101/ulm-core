@@ -75,6 +75,12 @@ class SavedPractice:
     mastered: bool
 
 
+def _as_utc(moment: datetime) -> datetime:
+    # SQLite (tests) devuelve las fechas sin zona; Postgres, con zona. Se
+    # guardan en UTC, asi que una sin zona es UTC.
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -91,6 +97,19 @@ class EnglishPracticeService:
         self._min_words = min_words_per_level
         # Inyectable para que los tests fijen la mezcla nuevas/repaso.
         self._rng = rng or random.Random()
+
+    # --- Actividad (dashboard) ---
+
+    def practice_times(self, user_id: int, start: datetime, end: datetime) -> list[datetime]:
+        """Momento (UTC) de cada practica terminada en [start, end)."""
+        return [
+            _as_utc(moment)
+            for moment in self._repository.list_completed_at(user_id=user_id, start=start, end=end)
+        ]
+
+    def last_practice_at(self, user_id: int) -> datetime | None:
+        moment = self._repository.last_completed_at(user_id=user_id)
+        return _as_utc(moment) if moment is not None else None
 
     # --- Nivel ---
 

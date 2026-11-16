@@ -214,6 +214,12 @@ def _private_routes() -> list[APIRoute]:
     ]
 
 
+# Rutas del dashboard sin permiso de dominio: filtran cada seccion por permiso
+# adentro (ver test_dashboard.py). Lista explicita, no prefijo: una ruta nueva
+# de /dashboard tiene que decidir su permiso.
+SESSION_ONLY_DASHBOARD_ROUTES = {f"{API}/dashboard/today", f"{API}/dashboard/pulse"}
+
+
 def test_every_private_route_except_me_requires_a_permission():
     """Si alguien monta un router nuevo con permiso None, o una ruta suelta,
     esto falla: un modulo no queda abierto a cualquier usuario logueado.
@@ -224,6 +230,7 @@ def test_every_private_route_except_me_requires_a_permission():
         for route in _private_routes()
         if route.path != f"{API}/me"
         and not route.path.startswith(f"{API}/me/")
+        and route.path not in SESSION_ONLY_DASHBOARD_ROUTES
         and not _required_permissions(route.dependant)
         and not _requires_admin(route.dependant)
     ]
@@ -268,6 +275,7 @@ def test_system_routes_open_for_the_admin(monkeypatch):
         ("/calendar-tasks", Permission.PLANNING),
         ("/calendar-events", Permission.PLANNING),
         ("/ai", Permission.AI),
+        ("/dashboard/pulse/interpretation", Permission.AI),
     ],
 )
 def test_each_router_requires_the_right_permission(prefix, permission):

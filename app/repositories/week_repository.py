@@ -1,6 +1,7 @@
 """Interfaz (Protocol) del acceso a datos de semanas de checklist."""
 
 from collections.abc import Sequence
+from datetime import date
 from typing import Protocol
 
 from app.db.models.checklist import ChecklistWeek
@@ -26,6 +27,13 @@ class WeekRepository(Protocol):
     def list_closed_by_year(self, user_id: int, year: int) -> Sequence[ChecklistWeek]:
         """Semanas cerradas cuyo first_day cae en `year` (vista semanal: cada
         semana pertenece al anio de su propio inicio, sin desagregar)."""
+        ...
+
+    def list_overlapping(
+        self, user_id: int, first_day: date, last_day: date
+    ) -> Sequence[ChecklistWeek]:
+        """Semanas (abiertas o cerradas) cuyo rango toca [first_day, last_day].
+        Para el pulso semanal del dashboard, que mira dias sueltos."""
         ...
 
     def list_closed_overlapping_year(self, user_id: int, year: int) -> Sequence[ChecklistWeek]:

@@ -1,14 +1,19 @@
 """Agregaciones de checklist para analytics (tendencias semanales/mensuales
 de semanas cerradas). Solo lee cl_user_weeks + cl_week_category_day_score, nunca
-escribe (eso lo hace WeekService.close_week, una unica vez por semana)."""
+escribe (eso lo hace WeekService.close_week, una unica vez por semana).
+
+Excepcion: `points_by_day` (pulso del dashboard) tambien lee las tareas de la
+semana abierta, que todavia no tiene puntajes materializados."""
 
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 
 from app.repositories.category_repository import CategoryRepository
+from app.repositories.task_repository import TaskRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
 from app.repositories.week_repository import WeekRepository
+from app.schemas.checklist import POINTS_BY_IMPORTANCE, Importance, TaskStatus
 from app.services.day_utils import resolve_date_for_day
 
 # Por encima de este numero de categorias con datos en el rango consultado,
@@ -37,10 +42,45 @@ class ChecklistAnalyticsService:
         week_repository: WeekRepository,
         score_repository: WeekCategoryDayScoreRepository,
         category_repository: CategoryRepository,
+        task_repository: TaskRepository,
     ) -> None:
         self._week_repository = week_repository
         self._score_repository = score_repository
         self._category_repository = category_repository
+        self._task_repository = task_repository
+
+    def points_by_day(
+        self, user_id: int, first_day: date, last_day: date
+    ) -> dict[date, tuple[int, int]]:
+        """(puntos logrados, puntos posibles) por fecha en [first_day, last_day].
+
+        Semanas cerradas: de sus puntajes materializados. Semana abierta: de sus
+        tareas en vivo, con el mismo criterio que usara close_week al cerrarla
+        (todas las tareas, incluidas las de categorias deshabilitadas). Un dia
+        sin semana no aparece: "sin datos" no es lo mismo que "0 puntos"."""
+        weeks = self._week_repository.list_overlapping(user_id, first_day, last_day)
+        totals: dict[date, list[int]] = defaultdict(lambda: [0, 0])
+
+        closed = {week.id: week for week in weeks if week.closed}
+        for row in self._score_repository.list_by_week_ids(list(closed), user_id=user_id):
+            day = resolve_date_for_day(closed[row.cl_week_id].first_day, row.day_of_week)
+            if first_day <= day <= last_day:
+                totals[day][0] += row.score
+                totals[day][1] += row.points_possible
+
+        for week in weeks:
+            if week.closed:
+                continue
+            for task in self._task_repository.list_by_week(week.id, user_id=user_id):
+                day = resolve_date_for_day(week.first_day, int(task.day_of_week))
+                if not first_day <= day <= last_day:
+                    continue
+                points = POINTS_BY_IMPORTANCE[Importance(task.importance)]
+                totals[day][1] += points
+                if task.status == TaskStatus.COMPLETE.value:
+                    totals[day][0] += points
+
+        return {day: (score, possible) for day, (score, possible) in totals.items()}
 
     def get_weekly(
         self, user_id: int, year: int

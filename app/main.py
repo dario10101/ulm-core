@@ -17,6 +17,7 @@ from app.api.routes import (
     calendar_events,
     checklists,
     cld_tasks,
+    dashboard,
     english,
     english_admin,
     expenses,
@@ -128,6 +129,9 @@ ADMIN_ONLY = "admin"
 # pide ningun permiso.
 PRIVATE_ROUTERS = (
     (me.router, None),
+    # Pagina de aterrizaje de todos: filtra cada seccion por permiso adentro
+    # (DashboardService); la interpretacion con IA exige `ai` en su ruta.
+    (dashboard.router, None),
     (system_params.router, ADMIN_ONLY),
     (admin_users.router, ADMIN_ONLY),
     (english_admin.router, ADMIN_ONLY),

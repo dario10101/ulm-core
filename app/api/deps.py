@@ -9,6 +9,8 @@ saben de cookies ni sesiones. Los tests reemplazan `get_current_user` (ver
 tests/conftest.py, acting_as).
 """
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
@@ -99,6 +101,8 @@ from app.services.checklist_analytics_service import ChecklistAnalyticsService
 from app.services.checklist_task_service import ChecklistTaskService
 from app.services.cld_task_service import CldTaskService
 from app.services.cld_user_event_service import CldUserEventService
+from app.services.dashboard_insight_service import DashboardInsightService
+from app.services.dashboard_service import DashboardService
 from app.services.english_bank_service import EnglishBankService
 from app.services.english_feedback_service import EnglishFeedbackService
 from app.services.english_practice_service import EnglishPracticeService
@@ -384,8 +388,11 @@ def get_checklist_analytics_service(
         get_week_category_day_score_repository
     ),
     category_repository: CategoryRepository = Depends(get_category_repository),
+    task_repository: TaskRepository = Depends(get_task_repository),
 ) -> ChecklistAnalyticsService:
-    return ChecklistAnalyticsService(week_repository, score_repository, category_repository)
+    return ChecklistAnalyticsService(
+        week_repository, score_repository, category_repository, task_repository
+    )
 
 
 def get_checklist_task_service(
@@ -568,3 +575,49 @@ def get_english_feedback_service(
         model=model,
         max_output_tokens=settings.english_feedback_max_output_tokens,
     )
+
+
+# --- Dashboard ---
+
+
+def get_clock() -> Callable[[], datetime]:
+    """ "Ahora" en UTC. Los tests lo reemplazan para fijar el dia."""
+    return lambda: datetime.now(UTC)
+
+
+def get_dashboard_service(
+    calendar_events: CalendarEventService = Depends(get_calendar_event_service),
+    checklist_analytics: ChecklistAnalyticsService = Depends(get_checklist_analytics_service),
+    expenses: ExpenseService = Depends(get_expense_service),
+    incomes: IncomeSummaryService = Depends(get_income_summary_service),
+    weights: WeightService = Depends(get_weight_service),
+    english: EnglishPracticeService = Depends(get_english_practice_service),
+    clock: Callable[[], datetime] = Depends(get_clock),
+) -> DashboardService:
+    # Construir todos los services no consulta la base: solo se llaman los de
+    # los dominios que el usuario tiene (ver DashboardService).
+    return DashboardService(
+        calendar_events=calendar_events,
+        checklist_analytics=checklist_analytics,
+        expenses=expenses,
+        incomes=incomes,
+        weights=weights,
+        english=english,
+        clock=clock,
+    )
+
+
+def get_default_ai_model() -> AiModel:
+    """El de OPENAI_MODEL (el mismo default de "AI features"), con su config del catalogo."""
+    model = find_model(settings.openai_model)
+    if model is None:
+        raise RuntimeError(f"OPENAI_MODEL={settings.openai_model} no esta en el catalogo")
+    return model
+
+
+def get_dashboard_insight_service(
+    generator: TextGenerator | None = Depends(get_text_generator),
+    usage: AiUsageRecorder = Depends(get_ai_usage_recorder),
+    model: AiModel = Depends(get_default_ai_model),
+) -> DashboardInsightService:
+    return DashboardInsightService(generator, usage, model=model)

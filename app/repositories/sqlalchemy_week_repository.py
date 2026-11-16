@@ -59,6 +59,23 @@ class SqlAlchemyWeekRepository:
             .all()
         )
 
+    def list_overlapping(
+        self, user_id: int, first_day: date, last_day: date
+    ) -> Sequence[ChecklistWeek]:
+        return (
+            self._db.execute(
+                select(ChecklistWeek)
+                .where(
+                    ChecklistWeek.user_id == user_id,
+                    ChecklistWeek.first_day <= last_day,
+                    ChecklistWeek.last_day >= first_day,
+                )
+                .order_by(ChecklistWeek.first_day)
+            )
+            .scalars()
+            .all()
+        )
+
     def list_closed_overlapping_year(self, user_id: int, year: int) -> Sequence[ChecklistWeek]:
         year_start, year_end = date(year, 1, 1), date(year, 12, 31)
         return (

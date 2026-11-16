@@ -150,6 +150,24 @@ class SqlAlchemyEnglishPracticeRepository:
             .all()
         )
 
+    def list_completed_at(self, *, user_id: int, start: datetime, end: datetime) -> list[datetime]:
+        return list(
+            self._db.execute(
+                select(EngPractice.completed_at).where(
+                    EngPractice.user_id == user_id,
+                    EngPractice.completed_at >= start,
+                    EngPractice.completed_at < end,
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    def last_completed_at(self, *, user_id: int) -> datetime | None:
+        return self._db.execute(
+            select(func.max(EngPractice.completed_at)).where(EngPractice.user_id == user_id)
+        ).scalar_one_or_none()
+
     def get_feedback(self, practice_id: int) -> EngPracticeFeedback | None:
         return self._db.get(EngPracticeFeedback, practice_id)
 

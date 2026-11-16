@@ -548,3 +548,10 @@ class EnglishContentNotFoundError(NotFoundError):
 
 class EnglishAudioInvalidError(ValidationError):
     """Audio vacio, muy grande, muy largo o en un formato que no se acepta."""
+
+
+class PulseWeekInFutureError(ValidationError):
+    """El pulso semanal se pidio para una semana que todavia no empieza."""
+
+    def __init__(self) -> None:
+        super().__init__("La semana pedida todavia no empieza")
