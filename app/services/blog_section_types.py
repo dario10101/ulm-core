@@ -67,7 +67,8 @@ class HomeContent(_Content):
     headline: ShortText = ""
     intro: Annotated[str, Field(max_length=5000)] = ""  # markdown
     highlights: Annotated[list[Highlight], Field(max_length=12)] = []
-    cta: Link | None = None
+    # v1 tenia `cta` (un boton "Escríbeme"): lo reemplazan los links de la
+    # seccion (PLAN-BLOG-LINKS.md, L2). Ver _drop_cta.
 
 
 class AboutContent(_Content):
@@ -140,6 +141,12 @@ class SectionType:
     upgrades: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = field(default_factory=dict)
 
 
+def _drop_cta(content: dict[str, Any]) -> dict[str, Any]:
+    """home v1 -> v2: sin `cta` (L2). Se descarta: el boton pasa a ser un link
+    de la seccion, que el usuario agrega desde su lista de links."""
+    return {key: value for key, value in content.items() if key != "cta"}
+
+
 SECTION_TYPES: dict[str, SectionType] = {
     section_type.key: section_type
     for section_type in (
@@ -150,6 +157,8 @@ SECTION_TYPES: dict[str, SectionType] = {
             content_model=HomeContent,
             default_label="Inicio",
             default_slug="inicio",
+            schema_version=2,
+            upgrades={1: _drop_cta},
         ),
         SectionType(
             key="about",

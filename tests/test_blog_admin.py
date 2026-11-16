@@ -200,7 +200,6 @@ VALID_CONTENT = {
         "highlights": [
             {"kind": "product", "title": "ULM", "url": "https://ulm.dev", "image_url": None}
         ],
-        "cta": {"label": "Ver proyectos", "url": "https://ulm.dev/proyectos"},
     },
     "about": {
         "photo_url": "https://example.com/yo.jpg",

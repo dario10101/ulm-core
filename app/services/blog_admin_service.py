@@ -44,12 +44,34 @@ from app.schemas.blog_admin import (
     GroupUpdate,
     ItemRead,
     ItemUpdate,
+    LinkRead,
+    LinkSlotRW,
+    LinkTypeRead,
+    LinkWrite,
     SectionCreate,
+    SectionLinks,
     SectionRead,
     SectionTypeRead,
     SectionUpdate,
 )
-from app.services.blog_documents import BlogDoc, BodyDoc, GroupDoc, ItemDoc, SectionDoc
+from app.services.blog_documents import (
+    BlogDoc,
+    BodyDoc,
+    GroupDoc,
+    ItemDoc,
+    LinkDoc,
+    LinkSlot,
+    SectionDoc,
+    SectionLinksDoc,
+)
+from app.services.blog_links import (
+    CATEGORIES,
+    LINK_TYPES,
+    comparison_key,
+    get_link_type,
+    merge_slots,
+    normalize_link,
+)
 from app.services.blog_markdown import parse_markdown_upload
 from app.services.blog_reads import LoadedSection as _Section
 from app.services.blog_reads import load_sections, sort_items
@@ -69,7 +91,9 @@ from app.services.errors import (
     BlogGroupNotFoundError,
     BlogItemNotFoundError,
     BlogLimitError,
+    BlogLinkNotFoundError,
     BlogSectionNotFoundError,
+    InvalidBlogLinkError,
     InvalidOrderError,
     SectionWithoutItemsError,
     SingletonSectionExistsError,
@@ -106,15 +130,128 @@ class BlogAdminService:
 
     def update_settings(self, user_id: int, payload: BlogSettingsWrite) -> BlogSettingsRead:
         entity = self._blog(user_id)
-        doc = BlogDoc(enabled=payload.enabled, display_name=payload.display_name or None)
+        # model_copy: el registro tambien guarda la lista de links.
+        doc = BlogDoc.model_validate(entity.data).model_copy(
+            update={"enabled": payload.enabled, "display_name": payload.display_name or None}
+        )
         _save(entity, doc)
         self._repo.flush()
         return self._settings_read(doc)
 
+    # --- Links (PLAN-BLOG-LINKS.md) ---
+
+    def list_links(self, user_id: int) -> list[LinkRead]:
+        blog = BlogDoc.model_validate(self._blog(user_id).data)
+        self._repo.flush()
+        return self._links_read(user_id, blog.links)
+
+    def create_link(self, user_id: int, payload: LinkWrite) -> LinkRead:
+        entity = self._blog(user_id)
+        blog = BlogDoc.model_validate(entity.data)
+        link = self._validated_link(new_ulid(), payload, blog.links)
+        blog.links = [*blog.links, link]
+        _save(entity, blog)
+        self._repo.flush()
+        return self._link_read(link, used_in=0)
+
+    def update_link(self, user_id: int, link_id: str, payload: LinkWrite) -> LinkRead:
+        entity = self._blog(user_id)
+        blog = BlogDoc.model_validate(entity.data)
+        index = self._link_index(blog.links, link_id)
+        others = [link for link in blog.links if link.id != link_id]
+        updated = self._validated_link(link_id, payload, others)
+        blog.links = [updated if i == index else link for i, link in enumerate(blog.links)]
+        _save(entity, blog)
+        self._repo.flush()
+        return self._links_read(user_id, [updated])[0]
+
+    def delete_link(self, user_id: int, link_id: str) -> None:
+        """Lo borra de la lista y de las secciones donde estaba ubicado."""
+        entity = self._blog(user_id)
+        blog = BlogDoc.model_validate(entity.data)
+        self._link_index(blog.links, link_id)
+        blog.links = [link for link in blog.links if link.id != link_id]
+        _save(entity, blog)
+        for section in self._sections(user_id, include_unknown=True):
+            slots = section.doc.links
+            if any(slot.id == link_id for slot in [*slots.inline, *slots.end]):
+                section.doc.links = SectionLinksDoc(
+                    inline=[slot for slot in slots.inline if slot.id != link_id],
+                    end=[slot for slot in slots.end if slot.id != link_id],
+                )
+                _save(section.entity, section.doc)
+        self._repo.flush()
+
+    def set_section_links(
+        self, user_id: int, section_id: str, payload: SectionLinks
+    ) -> SectionRead:
+        """Orden y habilitados de los links de la seccion, por ubicacion."""
+        section = self._section(user_id, section_id)
+        link_ids = self._link_ids(user_id)
+        known = set(link_ids)
+
+        def slots(placement: list[LinkSlotRW]) -> list[LinkSlot]:
+            ids = [slot.id for slot in placement]
+            if len(ids) != len(set(ids)):
+                raise InvalidBlogLinkError("Cada link puede estar una sola vez por ubicacion")
+            if not set(ids) <= known:
+                raise BlogLinkNotFoundError()
+            return [LinkSlot(id=slot.id, enabled=slot.enabled) for slot in placement]
+
+        section.doc.links = SectionLinksDoc(inline=slots(payload.inline), end=slots(payload.end))
+        _save(section.entity, section.doc)
+        self._repo.flush()
+        return self._section_read(section, link_ids)
+
+    def _validated_link(self, link_id: str, payload: LinkWrite, others: list[LinkDoc]) -> LinkDoc:
+        """El link normalizado, si cumple las reglas de su tipo, el tope por
+        tipo y no repite otro link del mismo tipo (`others`: el resto de la
+        lista)."""
+        link_type = get_link_type(payload.type)
+        url = normalize_link(link_type, payload.url)
+        label = payload.label or None
+        if link_type.requires_label and not label:
+            raise InvalidBlogLinkError(
+                f"Un link de tipo {link_type.label} necesita un nombre (puede ser el mismo link)"
+            )
+        same_type = [link for link in others if link.type == link_type.key]
+        if len(same_type) >= settings.blog_max_links_per_type:
+            raise InvalidBlogLinkError(
+                f"Puedes tener hasta {settings.blog_max_links_per_type} links de {link_type.label}"
+            )
+        key = comparison_key(url)
+        if any(comparison_key(link.url) == key for link in same_type):
+            raise InvalidBlogLinkError(f"Ese link de {link_type.label} ya esta en tu lista")
+        return LinkDoc(id=link_id, type=link_type.key, url=url, label=label)
+
+    @staticmethod
+    def _link_index(links: list[LinkDoc], link_id: str) -> int:
+        for index, link in enumerate(links):
+            if link.id == link_id:
+                return index
+        raise BlogLinkNotFoundError()
+
+    def _links_read(self, user_id: int, links: list[LinkDoc]) -> list[LinkRead]:
+        used: dict[str, int] = {}
+        for section in self._sections(user_id, include_unknown=True):
+            slots = section.doc.links
+            for link_id in {s.id for s in [*slots.inline, *slots.end] if s.enabled}:
+                used[link_id] = used.get(link_id, 0) + 1
+        return [self._link_read(link, used.get(link.id, 0)) for link in links]
+
+    @staticmethod
+    def _link_read(link: LinkDoc, used_in: int) -> LinkRead:
+        return LinkRead(id=link.id, type=link.type, url=link.url, label=link.label, used_in=used_in)
+
+    def _link_ids(self, user_id: int) -> list[str]:
+        entity = self._repo.get(user_id=user_id, sk=keys.BLOG)
+        return [link.id for link in BlogDoc.model_validate(entity.data).links] if entity else []
+
     # --- Secciones ---
 
     def list_sections(self, user_id: int) -> list[SectionRead]:
-        return [self._section_read(section) for section in self._sections(user_id)]
+        link_ids = self._link_ids(user_id)
+        return [self._section_read(section, link_ids) for section in self._sections(user_id)]
 
     def create_section(self, user_id: int, payload: SectionCreate) -> SectionRead:
         section_type = get_section_type(payload.type)
@@ -551,10 +688,26 @@ class BlogAdminService:
                 )
                 for t in SECTION_TYPES.values()
             ],
+            link_types=[
+                LinkTypeRead(
+                    type=t.key,
+                    label=t.label,
+                    category=t.category,
+                    kind=t.kind,
+                    domains=list(t.domains),
+                    requires_label=t.requires_label,
+                    sensitive=t.sensitive,
+                    placeholder=t.placeholder,
+                )
+                for t in LINK_TYPES.values()
+            ],
+            link_categories=list(CATEGORIES),
+            max_links_per_type=settings.blog_max_links_per_type,
         )
 
-    @staticmethod
-    def _section_read(section: _Section) -> SectionRead:
+    def _section_read(self, section: _Section, link_ids: list[str] | None = None) -> SectionRead:
+        if link_ids is None:
+            link_ids = self._link_ids(section.entity.user_id)
         return SectionRead(
             id=section.id,
             type=section.doc.type,
@@ -563,6 +716,16 @@ class BlogAdminService:
             position=section.doc.position,
             enabled=section.doc.enabled,
             content=read_content(section.type, section.doc.content, section.doc.schema_version),
+            links=SectionLinks(
+                inline=[
+                    LinkSlotRW(id=slot.id, enabled=slot.enabled)
+                    for slot in merge_slots(section.doc.links.inline, link_ids)
+                ],
+                end=[
+                    LinkSlotRW(id=slot.id, enabled=slot.enabled)
+                    for slot in merge_slots(section.doc.links.end, link_ids)
+                ],
+            ),
             created_at=section.entity.created_at,
             updated_at=section.entity.updated_at,
         )

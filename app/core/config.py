@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     blog_max_groups_per_section: int = 20
     blog_max_items_per_section: int = 200
     blog_max_md_bytes: int = 200_000
+    # Links del blog por tipo (varios correos, varias tiendas). PLAN-BLOG-LINKS.md.
+    blog_max_links_per_type: int = 5
 
 
 settings = Settings()

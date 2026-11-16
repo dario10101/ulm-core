@@ -31,17 +31,69 @@ class SectionTypeRead(BaseModel):
     default_slug: str | None
 
 
+class LinkTypeRead(BaseModel):
+    """Un tipo del catalogo de links (app/services/blog_links.py): el admin
+    valida con estos mismos datos antes de enviar."""
+
+    type: str
+    label: str
+    category: str
+    kind: Literal["url", "email", "phone"]
+    domains: list[str]
+    requires_label: bool
+    sensitive: bool
+    placeholder: str
+
+
 class BlogSettingsRead(BaseModel):
     enabled: bool
     display_name: str | None
     max_enabled_sections: int
     max_sections: int
     section_types: list[SectionTypeRead]
+    link_types: list[LinkTypeRead]
+    link_categories: list[str]
+    max_links_per_type: int
 
 
 class BlogSettingsWrite(_Write):
     enabled: bool
     display_name: str | None = Field(default=None, max_length=80)
+
+
+# --- Links ---
+
+
+class LinkRead(BaseModel):
+    id: str
+    type: str
+    url: str
+    label: str | None
+    # En cuantas secciones esta habilitado (en medio o al final): el admin lo
+    # avisa antes de borrarlo.
+    used_in: int
+
+
+class LinkWrite(_Write):
+    type: str = Field(max_length=40)
+    # Lo que escribio el usuario: URL, correo o telefono segun el tipo. El
+    # service lo valida y normaliza.
+    url: str = Field(min_length=1, max_length=500)
+    label: str | None = Field(default=None, max_length=60)
+
+
+class LinkSlotRW(_Write):
+    id: str = Field(max_length=40)
+    enabled: bool
+
+
+class SectionLinks(_Write):
+    """Links de la seccion por ubicacion, en orden. Al leer trae todos los
+    links del usuario (los que nunca se habilitaron aca, al final y
+    deshabilitados); al escribir, cada link a lo sumo una vez por ubicacion."""
+
+    inline: list[LinkSlotRW] = Field(default=[], max_length=200)
+    end: list[LinkSlotRW] = Field(default=[], max_length=200)
 
 
 # --- Secciones ---
@@ -55,6 +107,7 @@ class SectionRead(BaseModel):
     position: int
     enabled: bool
     content: dict[str, Any]
+    links: SectionLinks
     created_at: dt.datetime
     updated_at: dt.datetime
 

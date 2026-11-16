@@ -17,13 +17,43 @@ class _Document(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class LinkDoc(_Document):
+    """Un link de la lista del usuario (PLAN-BLOG-LINKS.md). `url` ya
+    normalizado (https://, mailto: o https://wa.me/)."""
+
+    id: str
+    type: str
+    url: str
+    label: str | None = None
+
+
 class BlogDoc(_Document):
     """Config del blog (sk `BLOG`). Tambien es el "candado" de los cambios que
     afectan a todas las secciones (cuantas hay habilitadas): se reescribe en
-    cada uno para que su `version` serialice dos requests simultaneos."""
+    cada uno para que su `version` serialice dos requests simultaneos.
+
+    `links`: la lista de links del usuario. Va aca y no en su propia fila: son
+    pocos (tope por tipo), siempre se leen juntos y la lectura publica ya lee
+    este registro; ademas su `version` evita que dos pestañas se pisen."""
 
     enabled: bool = True
     display_name: str | None = None
+    links: list[LinkDoc] = []
+
+
+class LinkSlot(_Document):
+    """Un link de la lista del usuario en una ubicacion de la seccion."""
+
+    id: str
+    enabled: bool
+
+
+class SectionLinksDoc(_Document):
+    """Links de la seccion por ubicacion: en medio de la pagina (`inline`) y
+    al final de la plantilla (`end`). Fuera de `content`: no depende del tipo."""
+
+    inline: list[LinkSlot] = []
+    end: list[LinkSlot] = []
 
 
 class SectionDoc(_Document):
@@ -34,6 +64,7 @@ class SectionDoc(_Document):
     enabled: bool
     schema_version: int
     content: dict[str, Any]
+    links: SectionLinksDoc = SectionLinksDoc()
 
 
 class GroupDoc(_Document):

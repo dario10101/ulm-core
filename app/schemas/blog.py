@@ -13,6 +13,24 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class PublicLink(BaseModel):
+    """Un link habilitado en una ubicacion de la seccion. Sin el id interno.
+    Los que exponen un dato personal (correo, telefono) no traen `url` sino
+    `encoded` (ofuscado, ver app/services/blog_links.py): el front lo arma al
+    hacer clic."""
+
+    type: str
+    category: str
+    label: str
+    url: str | None = None
+    encoded: str | None = None
+
+
+class PublicSectionLinks(BaseModel):
+    inline: list[PublicLink] = []
+    end: list[PublicLink] = []
+
+
 class PublicSectionRead(BaseModel):
     slug: str
     label: str
@@ -20,6 +38,9 @@ class PublicSectionRead(BaseModel):
     # elige con esto que plantilla pintar.
     type: str
     content: dict[str, Any]
+    # Ya agrupados por categoria (en el orden de blog_links.CATEGORIES) y
+    # solo los habilitados: uno deshabilitado nunca sale de la base.
+    links: PublicSectionLinks = PublicSectionLinks()
 
 
 class PublicBlogRead(BaseModel):

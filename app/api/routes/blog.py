@@ -21,8 +21,11 @@ from app.schemas.blog_admin import (
     GroupUpdate,
     ItemRead,
     ItemUpdate,
+    LinkRead,
+    LinkWrite,
     OrderWrite,
     SectionCreate,
+    SectionLinks,
     SectionOrderWrite,
     SectionRead,
     SectionUpdate,
@@ -53,6 +56,57 @@ def update_settings(
 ) -> BlogSettingsRead:
     try:
         return service.update_settings(user_id, payload)
+    except DomainError as exc:
+        raise http_error(exc) from exc
+
+
+# --- Links (PLAN-BLOG-LINKS.md) ---
+
+
+@router.get("/links", response_model=list[LinkRead])
+def list_links(
+    user_id: int = Depends(get_current_user_id),
+    service: BlogAdminService = Depends(get_blog_admin_service),
+) -> list[LinkRead]:
+    """La lista de links del usuario; cada seccion elige cuales mostrar."""
+    return service.list_links(user_id)
+
+
+@router.post("/links", response_model=LinkRead, status_code=201)
+def create_link(
+    payload: LinkWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: BlogAdminService = Depends(get_blog_admin_service),
+) -> LinkRead:
+    """Valida el link segun su tipo (dominio, formato) y lo normaliza: 422 con el motivo."""
+    try:
+        return service.create_link(user_id, payload)
+    except DomainError as exc:
+        raise http_error(exc) from exc
+
+
+@router.put("/links/{link_id}", response_model=LinkRead)
+def update_link(
+    link_id: str,
+    payload: LinkWrite,
+    user_id: int = Depends(get_current_user_id),
+    service: BlogAdminService = Depends(get_blog_admin_service),
+) -> LinkRead:
+    try:
+        return service.update_link(user_id, link_id, payload)
+    except DomainError as exc:
+        raise http_error(exc) from exc
+
+
+@router.delete("/links/{link_id}", status_code=204)
+def delete_link(
+    link_id: str,
+    user_id: int = Depends(get_current_user_id),
+    service: BlogAdminService = Depends(get_blog_admin_service),
+) -> None:
+    """Lo quita tambien de las secciones donde estaba."""
+    try:
+        service.delete_link(user_id, link_id)
     except DomainError as exc:
         raise http_error(exc) from exc
 
@@ -118,6 +172,20 @@ def set_section_content(
     de seccion (app/services/blog_section_types.py): 422 con los campos."""
     try:
         return service.set_section_content(user_id, section_id, content)
+    except DomainError as exc:
+        raise http_error(exc) from exc
+
+
+@router.put("/sections/{section_id}/links", response_model=SectionRead)
+def set_section_links(
+    section_id: str,
+    payload: SectionLinks,
+    user_id: int = Depends(get_current_user_id),
+    service: BlogAdminService = Depends(get_blog_admin_service),
+) -> SectionRead:
+    """Links de la seccion en medio y al final: orden y habilitados."""
+    try:
+        return service.set_section_links(user_id, section_id, payload)
     except DomainError as exc:
         raise http_error(exc) from exc
 

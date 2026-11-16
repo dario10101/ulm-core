@@ -10,7 +10,10 @@ Casos que ejercita: el tope de secciones habilitadas (rubendorado tiene 6
 habilitadas y "Libros" deshabilitada), una seccion de plantilla deshabilitada
 (el "Sobre mí" de rubendorado2), un label renombrado con el slug por defecto
 ("Bienvenida" -> /inicio), borradores, elementos con y sin subseccion, e
-imagenes por URL en el .md y en las plantillas.
+imagenes por URL en el .md y en las plantillas. Links (PLAN-BLOG-LINKS.md):
+rubendorado tiene uno de cada tipo (dos correos), ubicados en medio y al final
+de sus secciones, con algunos deshabilitados; rubendorado2 no tiene links.
+Los correos, telefono y perfiles son de ejemplo, no datos reales.
 
 No es una migracion (D20): datos de prueba, solo para desarrollo.
 
@@ -18,6 +21,8 @@ Uso (desde ulm-core/, con el venv activado y la base migrada):
     python -m scripts.seed_blog            # carga; si un usuario ya tiene blog, lo salta
     python -m scripts.seed_blog --reset    # borra el blog de esos usuarios y lo carga de nuevo
     python -m scripts.seed_blog --delete   # solo borra el blog de esos usuarios
+    python -m scripts.seed_blog --links    # solo agrega los links a un blog ya cargado
+                                           # (sin borrar nada; si ya tiene links, lo salta)
 """
 
 import sys
@@ -31,7 +36,14 @@ from app.db.session import SessionLocal
 from app.repositories.blog_entity_repository import BlogEntityRepository
 from app.repositories.sqlalchemy_blog_entity_repository import SqlAlchemyBlogEntityRepository
 from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from app.schemas.blog_admin import GroupCreate, ItemUpdate, SectionCreate
+from app.schemas.blog_admin import (
+    GroupCreate,
+    ItemUpdate,
+    LinkSlotRW,
+    LinkWrite,
+    SectionCreate,
+    SectionLinks,
+)
 from app.services.blog_admin_service import BlogAdminService
 
 
@@ -67,6 +79,45 @@ class SectionSeed:
     # (label, descripcion) de cada subseccion, en orden.
     groups: list[tuple[str, str | None]] = field(default_factory=list)
     items: list[ItemSeed] = field(default_factory=list)
+    # Claves de LinkSeed habilitadas en medio de la pagina y al final, en orden.
+    # Las que no estan quedan deshabilitadas (opt-in).
+    links_inline: list[str] = field(default_factory=list)
+    links_end: list[str] = field(default_factory=list)
+
+
+@dataclass
+class LinkSeed:
+    key: str  # solo para referenciarlo desde las secciones
+    type: str
+    url: str
+    label: str | None = None
+
+
+# Uno de cada tipo del catalogo (dos correos: se permiten varios por tipo).
+RUBEN_LINKS = [
+    LinkSeed("email", "email", "hola@example.com", "Escríbeme"),
+    LinkSeed("email-work", "email", "trabajo@example.com", "Correo laboral"),
+    LinkSeed("whatsapp", "whatsapp", "+57 300 000 0000"),
+    LinkSeed("linkedin", "linkedin", "https://www.linkedin.com/in/example"),
+    LinkSeed("github", "github", "https://github.com/example"),
+    LinkSeed("gitlab", "gitlab", "https://gitlab.com/example"),
+    LinkSeed("kaggle", "kaggle", "https://www.kaggle.com/example"),
+    LinkSeed("x", "x", "https://x.com/example"),
+    LinkSeed("instagram", "instagram", "https://www.instagram.com/example"),
+    LinkSeed("facebook", "facebook", "https://www.facebook.com/example"),
+    LinkSeed("tiktok", "tiktok", "https://www.tiktok.com/@example"),
+    LinkSeed("youtube", "youtube", "https://www.youtube.com/@example", "Mi canal"),
+    LinkSeed("mercadolibre", "mercadolibre", "https://listado.mercadolibre.com.co/_CustId_1"),
+    LinkSeed("amazon", "amazon", "https://www.amazon.com/shop/example", "Mis recomendados"),
+    LinkSeed("etsy", "etsy", "https://www.etsy.com/shop/example"),
+    LinkSeed("udemy", "udemy", "https://www.udemy.com/user/example", "Mis cursos"),
+    LinkSeed("buymeacoffee", "buymeacoffee", "https://buymeacoffee.com/example"),
+    LinkSeed("patreon", "patreon", "https://www.patreon.com/example"),
+    LinkSeed("website", "website", "https://example.com", "Mi portafolio"),
+]
+
+# Iconos al final, iguales en casi todas las secciones.
+RUBEN_END = ["email", "whatsapp", "linkedin", "github", "x", "instagram", "youtube"]
 
 
 # --- rubendorado: los textos que antes estaban quemados en el front ---
@@ -168,8 +219,9 @@ RUBEN = [
                     "url": "https://example.com/pyspark",
                 },
             ],
-            "cta": {"label": "Escríbeme", "url": "https://example.com/contacto"},
         },
+        links_inline=["email", "linkedin", "github", "website", "mercadolibre", "amazon", "etsy"],
+        links_end=RUBEN_END,
     ),
     SectionSeed(
         "about",
@@ -183,6 +235,8 @@ RUBEN = [
             "interests": ["Ingeniería de datos", "Frontend", "Kickboxing", "Fuerza"],
             "links": [{"label": "Sitio de ejemplo", "url": "https://example.com"}],
         },
+        links_inline=["instagram", "tiktok", "facebook", "youtube", "x"],
+        links_end=RUBEN_END,
     ),
     SectionSeed(
         "professional",
@@ -210,6 +264,8 @@ RUBEN = [
             "certifications": [{"name": "AWS Solutions Architect (en curso)", "issuer": "AWS"}],
             "links": [{"label": "Perfil de ejemplo", "url": "https://example.com/perfil"}],
         },
+        links_inline=["linkedin", "github", "gitlab", "kaggle", "email-work", "website"],
+        links_end=RUBEN_END,
     ),
     SectionSeed(
         "collection",
@@ -249,12 +305,16 @@ espacio para experimentar con frontend y desarrollo asistido por IA.
                 group="Planeados",
             ),
         ],
+        links_inline=["github", "gitlab"],
+        links_end=RUBEN_END,
     ),
     SectionSeed(
         "collection",
         label="Escritos",
         content={"intro": "Notas sobre datos, código, y lo que vaya surgiendo."},
         items=RUBEN_POSTS,
+        links_inline=["buymeacoffee", "patreon"],
+        links_end=RUBEN_END,
     ),
     SectionSeed(
         "collection",
@@ -291,6 +351,7 @@ espacio para experimentar con frontend y desarrollo asistido por IA.
                 published=False,
             ),
         ],
+        links_inline=["udemy", "youtube"],
     ),
     # 7ª seccion, deshabilitada: con 6 habilitadas, habilitarla supera el tope.
     SectionSeed(
@@ -386,6 +447,7 @@ RUBEN2 = [
 ]
 
 SEEDS: dict[str, list[SectionSeed]] = {"rubendorado": RUBEN, "rubendorado2": RUBEN2}
+LINK_SEEDS: dict[str, list[LinkSeed]] = {"rubendorado": RUBEN_LINKS}
 
 
 def delete_blog(repository: BlogEntityRepository, user_id: int) -> int:
@@ -397,7 +459,67 @@ def delete_blog(repository: BlogEntityRepository, user_id: int) -> int:
     return len(rows)
 
 
-def seed_user(service: BlogAdminService, user_id: int, sections: list[SectionSeed]) -> None:
+def create_links(service: BlogAdminService, user_id: int, links: list[LinkSeed]) -> dict[str, str]:
+    """Crea los links y devuelve su id por clave."""
+    return {
+        link.key: service.create_link(
+            user_id, LinkWrite(type=link.type, url=link.url, label=link.label)
+        ).id
+        for link in links
+    }
+
+
+def place_links(
+    service: BlogAdminService,
+    user_id: int,
+    section_id: str,
+    spec: SectionSeed,
+    link_ids: dict[str, str],
+) -> None:
+    if spec.links_inline or spec.links_end:
+        service.set_section_links(
+            user_id,
+            section_id,
+            SectionLinks(
+                inline=[LinkSlotRW(id=link_ids[k], enabled=True) for k in spec.links_inline],
+                end=[LinkSlotRW(id=link_ids[k], enabled=True) for k in spec.links_end],
+            ),
+        )
+
+
+def seed_links(
+    service: BlogAdminService, user_id: int, sections: list[SectionSeed], links: list[LinkSeed]
+) -> int:
+    """--links: agrega los links a un blog existente sin tocar el resto. Cada
+    seccion del seed se busca por tipo (las de una sola instancia) o por label
+    (colecciones); si el usuario la borro o renombro, se omite. Devuelve
+    cuantas secciones se ubicaron."""
+    link_ids = create_links(service, user_id, links)
+    existing = service.list_sections(user_id)
+    placed = 0
+    for spec in sections:
+        label = spec.label
+        match = next(
+            (
+                s
+                for s in existing
+                if s.type == spec.type and (label is None or s.label == label or s.id == spec.type)
+            ),
+            None,
+        )
+        if match is not None and (spec.links_inline or spec.links_end):
+            place_links(service, user_id, match.id, spec, link_ids)
+            placed += 1
+    return placed
+
+
+def seed_user(
+    service: BlogAdminService,
+    user_id: int,
+    sections: list[SectionSeed],
+    links: list[LinkSeed] | None = None,
+) -> None:
+    link_ids = create_links(service, user_id, links or [])
     for spec in sections:
         section = service.create_section(
             user_id, SectionCreate(type=spec.type, label=spec.label, enabled=spec.enabled)
@@ -420,11 +542,14 @@ def seed_user(service: BlogAdminService, user_id: int, sections: list[SectionSee
             )
             if item.published:
                 service.update_item(user_id, section.id, created.id, ItemUpdate(status="published"))
+        if link_ids:  # sin links (rubendorado2) no hay nada que ubicar
+            place_links(service, user_id, section.id, spec, link_ids)
 
 
 def main(argv: list[str]) -> int:
     reset = "--reset" in argv
     delete_only = "--delete" in argv
+    links_only = "--links" in argv
     db = SessionLocal()
     exit_code = 0
     try:
@@ -437,6 +562,16 @@ def main(argv: list[str]) -> int:
                 print(f"- {username}: no existe ningun usuario con ese username, se omite")
                 continue
             existing = repository.query(user_id=user.id, sk_prefix="")
+            if links_only:
+                links = LINK_SEEDS.get(username)
+                if not links:
+                    print(f"- {username}: el seed no tiene links para este usuario")
+                elif service.list_links(user.id):
+                    print(f"- {username}: ya tiene links, se omite")
+                else:
+                    placed = seed_links(service, user.id, sections, links)
+                    print(f"- {username}: {len(links)} links, ubicados en {placed} secciones")
+                continue
             if delete_only or (existing and reset):
                 print(f"- {username}: borradas {delete_blog(repository, user.id)} filas")
             elif existing:
@@ -444,7 +579,7 @@ def main(argv: list[str]) -> int:
                 exit_code = 1
                 continue
             if not delete_only:
-                seed_user(service, user.id, sections)
+                seed_user(service, user.id, sections, LINK_SEEDS.get(username))
                 print(f"- {username}: {len(sections)} secciones cargadas")
         db.commit()
     except Exception:

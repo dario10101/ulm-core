@@ -469,6 +469,18 @@ class InvalidOrderError(ValidationError):
         super().__init__(f"El orden debe incluir cada {noun} exactamente una vez")
 
 
+class InvalidBlogLinkError(ValidationError):
+    """El link no es valido para su tipo (dominio, formato, tope por tipo,
+    repetido). Ver app/services/blog_links.py. El mensaje dice que fallo."""
+
+
+class BlogLinkNotFoundError(NotFoundError):
+    """El link no existe en la lista del usuario."""
+
+    def __init__(self) -> None:
+        super().__init__("El link no existe")
+
+
 class InvalidMarkdownError(ValidationError):
     """El archivo subido no es un .md valido (extension, tamaño, UTF-8,
     frontmatter). El mensaje dice que fallo."""

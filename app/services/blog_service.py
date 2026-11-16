@@ -25,10 +25,13 @@ from app.schemas.blog import (
     PublicGroupRead,
     PublicItemRead,
     PublicItemSummary,
+    PublicLink,
+    PublicSectionLinks,
     PublicSectionRead,
     PublicSectionRef,
 )
-from app.services.blog_documents import BlogDoc, BodyDoc, GroupDoc, ItemDoc
+from app.services.blog_documents import BlogDoc, BodyDoc, GroupDoc, ItemDoc, LinkDoc, LinkSlot
+from app.services.blog_links import LINK_TYPES, category_rank, obfuscate
 from app.services.blog_reads import LoadedSection, load_sections, sort_items
 from app.services.blog_section_types import CollectionContent, read_content
 from app.services.errors import BlogNotFoundError
@@ -39,6 +42,28 @@ from app.services.username import normalize_username
 
 def _not_found() -> BlogNotFoundError:
     return BlogNotFoundError("Blog no encontrado")
+
+
+def _public_links(slots: list[LinkSlot], links: dict[str, LinkDoc]) -> list[PublicLink]:
+    """Los habilitados (de tipos conocidos), agrupados por categoria y, dentro
+    de cada una, en el orden del usuario. Sin nombre propio llevan el del sitio
+    (L4); correo y telefono van ofuscados (PLAN-BLOG-LINKS.md, 3.1)."""
+    result = []
+    for slot in slots:
+        link = links.get(slot.id)
+        link_type = LINK_TYPES.get(link.type) if link else None
+        if not slot.enabled or link is None or link_type is None:
+            continue
+        result.append(
+            PublicLink(
+                type=link_type.key,
+                category=link_type.category,
+                label=link.label or link_type.label,
+                url=None if link_type.sensitive else link.url,
+                encoded=obfuscate(link.url) if link_type.sensitive else None,
+            )
+        )
+    return sorted(result, key=lambda link: category_rank(link.category))
 
 
 def _summary(doc: ItemDoc) -> PublicItemSummary:
@@ -79,6 +104,7 @@ class BlogService:
     def get_public_blog(self, username: str) -> PublicBlogRead:
         owner, blog = self._visible_blog(username)
         assert owner.username is not None  # garantizado por get_public_owner
+        links = {link.id: link for link in blog.links}
         return PublicBlogRead(
             username=owner.username,
             display_name=blog.display_name,
@@ -89,6 +115,10 @@ class BlogService:
                     type=section.type.key,
                     content=read_content(
                         section.type, section.doc.content, section.doc.schema_version
+                    ),
+                    links=PublicSectionLinks(
+                        inline=_public_links(section.doc.links.inline, links),
+                        end=_public_links(section.doc.links.end, links),
                     ),
                 )
                 for section in self._enabled_sections(owner.id)
