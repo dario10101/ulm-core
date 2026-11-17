@@ -1271,3 +1271,71 @@ def test_failed_week_creation_leaves_no_week_behind(db_session, monkeypatch):
         json={"first_day": _d(0), "last_day": _d(6)},
     )
     assert reintento.status_code == 201
+
+
+# --- Bono de alta prioridad al cerrar la semana ---
+
+
+def _week_for_bonus_scenario() -> tuple[int, dict[str, int]]:
+    """Semana de 2 dias. Dia 1: todas las HIGH completas (A y B), C sin HIGH.
+    Dia 2: A completa su HIGH pero B falla la suya. Devuelve (week_id,
+    {nombre categoria: id})."""
+    cats = {name: _make_category(f"Bonus {name}") for name in ("A", "B", "C")}
+    week = client.post(
+        "/api/v1/checklists/weeks", json={"first_day": _d(97), "last_day": _d(98)}
+    ).json()
+    plan = [
+        ("A", "HIGH", 1, "COMPLETE"),
+        ("A", "STANDARD", 1, "FAILED"),
+        ("B", "HIGH", 1, "COMPLETE"),
+        ("C", "STANDARD", 1, "COMPLETE"),
+        ("A", "HIGH", 2, "COMPLETE"),
+        ("B", "HIGH", 2, "FAILED"),
+    ]
+    for index, (cat, importance, day, status) in enumerate(plan):
+        task = client.post(
+            f"/api/v1/checklists/weeks/{week['id']}/tasks",
+            json={
+                "name": f"Task {index}",
+                "importance": importance,
+                "category_id": cats[cat],
+                "day_of_week": day,
+            },
+        ).json()
+        client.patch(f"/api/v1/checklists/tasks/{task['id']}", json={"status": status})
+    return week["id"], cats
+
+
+def _day_scores(db_session, week_id: int) -> dict[tuple[int, int], tuple[int, int]]:
+    rows = db_session.query(ChecklistWeekCategoryDayScore).filter_by(cl_week_id=week_id).all()
+    return {(r.category_id, r.day_of_week): (r.score, r.points_possible) for r in rows}
+
+
+def test_close_week_with_high_priority_bonus(db_session):
+    week_id, cats = _week_for_bonus_scenario()
+
+    closed = client.post(
+        f"/api/v1/checklists/weeks/{week_id}/close", json={"apply_high_priority_bonus": True}
+    )
+    assert closed.status_code == 200
+    # Dia 1: A 2+2, B 2+2, C 1 (sin HIGH, sin bono). Dia 2: B fallo su HIGH,
+    # asi que nadie gana el bono ese dia: A 2, B 0.
+    assert closed.json()["score"] == 11
+
+    scores = _day_scores(db_session, week_id)
+    assert scores[(cats["A"], 1)] == (4, 5)
+    assert scores[(cats["B"], 1)] == (4, 4)
+    assert scores[(cats["C"], 1)] == (1, 1)
+    # El bono no ganado igual cuenta como posible: el % nunca pasa de 100.
+    assert scores[(cats["A"], 2)] == (2, 4)
+    assert scores[(cats["B"], 2)] == (0, 4)
+
+
+def test_close_week_without_bonus_keeps_plain_score(db_session):
+    week_id, cats = _week_for_bonus_scenario()
+
+    closed = client.post(
+        f"/api/v1/checklists/weeks/{week_id}/close", json={"apply_high_priority_bonus": False}
+    )
+    assert closed.json()["score"] == 7
+    assert _day_scores(db_session, week_id)[(cats["A"], 1)] == (2, 3)

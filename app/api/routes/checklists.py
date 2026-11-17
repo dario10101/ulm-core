@@ -28,6 +28,7 @@ from app.schemas.checklist import (
     TemplateTaskCreate,
     TemplateTaskRead,
     TemplateTaskUpdate,
+    WeekClose,
     WeekCreate,
     WeeklyAnalyticsPoint,
     WeeklyAnalyticsRead,
@@ -226,11 +227,13 @@ def create_week(
 @router.post("/weeks/{week_id}/close", response_model=WeekRead)
 def close_week(
     week_id: int,
+    payload: WeekClose | None = None,
     user_id: int = Depends(get_current_user_id),
     service: WeekService = Depends(get_week_service),
 ) -> WeekRead:
     try:
-        return service.close_week(user_id, week_id)
+        apply_bonus = payload.apply_high_priority_bonus if payload is not None else False
+        return service.close_week(user_id, week_id, apply_high_priority_bonus=apply_bonus)
     except WeekNotFoundError:
         raise HTTPException(status_code=404, detail="Semana no encontrada")
     except WeekAlreadyClosedError:

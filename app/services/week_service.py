@@ -13,6 +13,7 @@ from app.repositories.template_task_repository import TemplateTaskRepository
 from app.repositories.week_category_day_score_repository import WeekCategoryDayScoreRepository
 from app.repositories.week_repository import WeekRepository
 from app.schemas.checklist import (
+    HIGH_PRIORITY_BONUS,
     POINTS_BY_IMPORTANCE,
     CategoryStatus,
     Importance,
@@ -117,7 +118,9 @@ class WeekService:
         self._task_repository.flush()
         return week_to_read(week)
 
-    def close_week(self, user_id: int, week_id: int) -> WeekRead:
+    def close_week(
+        self, user_id: int, week_id: int, apply_high_priority_bonus: bool = False
+    ) -> WeekRead:
         week = self._get_owned_week(week_id, user_id)
         if week.closed:
             raise WeekAlreadyClosedError()
@@ -137,16 +140,15 @@ class WeekService:
         if pending_count > 0:
             raise WeekHasPendingTasksError(pending_count)
 
-        score = sum(
-            POINTS_BY_IMPORTANCE[Importance(task.importance)]
-            for task in tasks
-            if task.status == TaskStatus.COMPLETE.value
-        )
+        totals = self._category_day_totals(tasks, disabled_category_ids, apply_high_priority_bonus)
 
         week.closed = True
         week.closed_date = datetime.now(UTC)
-        week.score = score
-        self._save_category_day_scores(week, tasks)
+        # El puntaje semanal sale de la misma tabla que se materializa: asi
+        # cl_user_weeks.score y la suma de cl_week_category_day_score nunca
+        # divergen (bono incluido).
+        week.score = sum(score for score, _ in totals.values())
+        self._save_category_day_scores(week, totals)
         self._week_repository.flush()
         return week_to_read(week)
 
@@ -159,7 +161,51 @@ class WeekService:
             if category.status != CategoryStatus.ENABLED.value
         }
 
-    def _save_category_day_scores(self, week: ChecklistWeek, tasks: list[ChecklistTask]) -> None:
+    @staticmethod
+    def _category_day_totals(
+        tasks: list[ChecklistTask],
+        disabled_category_ids: set[int],
+        apply_high_priority_bonus: bool,
+    ) -> dict[tuple[int, int], tuple[int, int]]:
+        """(score, points_possible) por (categoria, dia).
+
+        Bono de alta prioridad (opcional): un dia gana el bono solo si TODAS
+        sus tareas HIGH, de todas las categorias, quedaron COMPLETE; entonces
+        cada categoria con al menos una HIGH ese dia suma HIGH_PRIORITY_BONUS.
+        Una categoria sin HIGH no recibe bono ni lo bloquea para las demas.
+        Las categorias deshabilitadas quedan fuera (la UI no las muestra, no se
+        pueden marcar). El bono tambien suma a points_possible de esas
+        categorias, para que el porcentaje de analytics nunca pase de 100%."""
+        totals: dict[tuple[int, int], list[int]] = defaultdict(lambda: [0, 0])
+        for task in tasks:
+            points = POINTS_BY_IMPORTANCE[Importance(task.importance)]
+            key = (task.category_id, int(task.day_of_week))
+            totals[key][1] += points
+            if task.status == TaskStatus.COMPLETE.value:
+                totals[key][0] += points
+
+        if apply_high_priority_bonus:
+            high_by_day: dict[int, list[ChecklistTask]] = defaultdict(list)
+            for task in tasks:
+                if (
+                    task.importance == Importance.HIGH.value
+                    and task.category_id not in disabled_category_ids
+                ):
+                    high_by_day[int(task.day_of_week)].append(task)
+
+            for day, high_tasks in high_by_day.items():
+                day_earned = all(t.status == TaskStatus.COMPLETE.value for t in high_tasks)
+                for category_id in {t.category_id for t in high_tasks}:
+                    key = (category_id, day)
+                    totals[key][1] += HIGH_PRIORITY_BONUS
+                    if day_earned:
+                        totals[key][0] += HIGH_PRIORITY_BONUS
+
+        return {key: (score, possible) for key, (score, possible) in totals.items()}
+
+    def _save_category_day_scores(
+        self, week: ChecklistWeek, totals: dict[tuple[int, int], tuple[int, int]]
+    ) -> None:
         """Materializa cl_week_category_day_score al cerrar la semana: una
         semana cerrada es inmutable, asi que este es el unico momento en que
         vale la pena calcular este agregado (evita recalcularlo en cada
@@ -168,25 +214,15 @@ class WeekService:
         Grano (categoria, dia): el mas fino que sigue siendo generico —
         cualquier rollup mas grueso (semanal, mensual, por dia de la semana)
         sale de sumar estas pocas filas, sin volver a tocar cl_week_tasks."""
-        totals: dict[tuple[int, int], dict[str, int]] = defaultdict(
-            lambda: {"score": 0, "points_possible": 0}
-        )
-        for task in tasks:
-            points = POINTS_BY_IMPORTANCE[Importance(task.importance)]
-            key = (task.category_id, int(task.day_of_week))
-            totals[key]["points_possible"] += points
-            if task.status == TaskStatus.COMPLETE.value:
-                totals[key]["score"] += points
-
-        for (category_id, day_of_week), totals_for_key in totals.items():
+        for (category_id, day_of_week), (score, points_possible) in totals.items():
             self._score_repository.add(
                 ChecklistWeekCategoryDayScore(
                     user_id=week.user_id,
                     cl_week_id=week.id,
                     category_id=category_id,
                     day_of_week=day_of_week,
-                    score=totals_for_key["score"],
-                    points_possible=totals_for_key["points_possible"],
+                    score=score,
+                    points_possible=points_possible,
                 )
             )
 

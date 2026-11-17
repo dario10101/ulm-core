@@ -18,6 +18,11 @@ POINTS_BY_IMPORTANCE: dict[Importance, int] = {
     Importance.STANDARD: 1,
 }
 
+# Bono opcional al cerrar la semana: en un dia en que TODAS las tareas HIGH
+# (de todas las categorias) quedaron COMPLETE, cada categoria con al menos una
+# tarea HIGH ese dia suma estos puntos extra. Ver WeekService.close_week.
+HIGH_PRIORITY_BONUS = 2
+
 
 # --- Categorias ---
 
@@ -126,6 +131,12 @@ class WeekRead(BaseModel):
     closed: bool
     closed_date: datetime | None
     score: int | None
+
+
+class WeekClose(BaseModel):
+    # Default False: sin body el cierre se comporta como antes del bono. La UI
+    # lo manda explicito (su checkbox arranca en True).
+    apply_high_priority_bonus: bool = False
 
 
 class WeekRangeRead(BaseModel):
